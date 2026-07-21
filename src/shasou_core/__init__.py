@@ -48,6 +48,9 @@ __all__ = [
     "Datum",
     "PoseQuality",
     "TRAJECTORY_COLUMNS",
+    "EventTag",
+    "EventType",
+    "EventSource",
 ]
 
 from .schemas.common import EgoPoseBackend  # noqa: E402
@@ -55,6 +58,11 @@ from .schemas.manifest import (  # noqa: E402
     ArchiveStatus,
     DriveManifest,
     DriveStatus,
+)
+from .schemas.events import (  # noqa: E402
+    EventSource,
+    EventTag,
+    EventType,
 )
 from .schemas.trajectory import (  # noqa: E402
     TRAJECTORY_COLUMNS,

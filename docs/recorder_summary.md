@@ -39,35 +39,40 @@ nuScenesのlogテーブル等に必要な情報を保持（将来的にはCosmos
 ```yaml
 drive_id: 2026-07-16_1030_vehicle01_osaka-umeda
 uuid: 7f3a...
-source: real                   # real / carla / alpasim等
+source: real                   # real / carla（現状の対応ソース）
 schema_version: v0.1.0         # shasou-coreの互換性判定に使用
 platform: platform_lincoln_6cam-lidar
 vehicle: vehicle01
-ego_pose_backend: ppk-ins      # 自己位置推定  
+ego_pose_backend: ppk-ins      # 自己位置推定（carlaソースではcarla-gt）
 calib_id: calib_v003_2026-07-01
 date_captured: "2026-07-16"
 location: osaka-umeda          # → nuScenes変換後のlog.locationとなる
 driver: tanaka
 weather: rain                  # → nuScenes変換後のscene.descriptionの素材となる
 recorder_version: v1.2.0       # 収録ソフトのバージョン
-sensor_config:                 # トピック名 ⇔ nuScenesチャネル名の対応
+sensor_config:                 # 正規チャネル名 ⇔ 実トピック名の対応（実センサのみ）
   LIDAR_TOP: /sensing/lidar_top/points
   RADAR_FRONT: /sensing/radar_front/points
-  CAM_FRONT: /sensing/camera_front/image_compressed
+  CAM_FRONT: /sensing/cam_front/image_raw/compressed
   ...
-status: verified               # recorded → transferred → verified (→ imported)
+status: verified               # recorded → transferred → verified → imported
+archive_status: none           # none / archived / glacier（statusとは独立の軸）
 ```
+
+※ statusのimportedはshasou-studioがRaw層取り込み時に書き戻す。recorderが自力で書くのはverifiedまで。carlaソースの場合はsensor_configの実センサに加え、gt系トピック（gt/ego_odom, gt/objects, gt/depth_* 等）が別途存在する。
 
 #### catalog.sqlite
 検索高速化のため、manifestと同内容をcatalog.sqlite（データベース）に記録しておく。
 
 #### event.jsonl
-運転中にユーザーが各種端末（物理/ステアリングボタンやタブレット）から入力した情報をROS2 Topicとして受け取り、JSONL形式で以下のように保存しておく（フィールド等はshasou-coreで定義）
+運転中にユーザーが各種端末（物理/ステアリングボタンやタブレット）から入力した情報をROS 2 Topicとして受け取り、JSONL形式で保存する（スキーマはshasou-coreのEventTagで定義）。収録中の人間起点タグと収録後の自動タグ（carla_scenario等）が同フォーマットで共存し、sourceで区別する。events.jsonlはbagからの派生物（正はbag側）。
 
 ```jsonl
-{"timestamp": 1752641234.512, "type": "interesting", "label": "cut-in", "source": "driver_button"}
-{"timestamp": 1752641301.220, "type": "marker", "label": "construction zone", "source": "tablet"}
+{"timestamp": 1752641234512000000, "type": "interesting", "label": "cut-in", "source": "driver_button"}
+{"timestamp": 1752641301220000000, "type": "marker", "label": "construction zone", "source": "tablet"}
 ```
+
+**timestampはエポックからのナノ秒整数**（shasou全体の時刻規約。float秒は不可）。
 
 #### ego_pose_backendの選択肢
 メタデータの`ego_pose_backend`に記録する自己位置推定の方法は、以下から選択する

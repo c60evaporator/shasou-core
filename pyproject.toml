@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "shasou-core"
+version = "0.1.0"
+description = "Shared schemas and conventions for the shasou data collection ecosystem"
+readme = "README.md"
+requires-python = ">=3.10"
+# 規律: ランタイム依存は pydantic のみ。フレームワーク (FastAPI, SQLAlchemy,
+# ROS など) への依存追加は禁止。I/O 系は optional extras に隔離する。
+dependencies = [
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+io = [
+    "pyarrow>=15",
+]
+dev = [
+    "pytest>=8",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shasou_core"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

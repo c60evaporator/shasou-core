@@ -1,0 +1,155 @@
+{
+  "$defs": {
+    "ArchiveStatus": {
+      "description": "S3 アーカイブ状態。status とは独立の軸。",
+      "enum": [
+        "none",
+        "archived",
+        "glacier"
+      ],
+      "title": "ArchiveStatus",
+      "type": "string"
+    },
+    "DataSource": {
+      "description": "ドライブの出自。トピックセットの差分 (topics.py) と対応する。",
+      "enum": [
+        "carla",
+        "real"
+      ],
+      "title": "DataSource",
+      "type": "string"
+    },
+    "DriveStatus": {
+      "description": "ドライブの処理到達段階 (所在ではなく段階)。\n\nrecorder 側 catalog が管理するのは verified まで。imported 以降は\nstudio が Raw 層取り込み時に catalog へ書き戻す。",
+      "enum": [
+        "recorded",
+        "transferred",
+        "verified",
+        "imported"
+      ],
+      "title": "DriveStatus",
+      "type": "string"
+    },
+    "EgoPoseBackend": {
+      "description": "自己位置推定バックエンド。共有語彙 (選択肢 B)。\n\n2 箇所で使われるが意味づけが異なる:\n- manifest.ego_pose_backend: このドライブの *推奨/既定* 手法 (弱い宣言)。\n  後から他手法で軌跡を作っても矛盾しない。\n- TrajectoryMetadata.backend: この軌跡成果物を *実際に作った* 手法 (来歴)。\n1 ドライブから複数 backend の軌跡が併存できる (1 対多)。値集合は共有し、\n1 対 1 制約は課さない。",
+      "enum": [
+        "ppk-ins",
+        "lio-graph",
+        "ndt-map",
+        "carla-gt"
+      ],
+      "title": "EgoPoseBackend",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "1 ドライブの自己記述メタデータ (manifest.yaml)。",
+  "properties": {
+    "archive_status": {
+      "$ref": "#/$defs/ArchiveStatus",
+      "default": "none"
+    },
+    "calib_id": {
+      "description": "calibrations/ 直下の 1 フォルダを一意に指す",
+      "title": "Calib Id",
+      "type": "string"
+    },
+    "date_captured": {
+      "format": "date",
+      "title": "Date Captured",
+      "type": "string"
+    },
+    "drive_id": {
+      "description": "人間可読 ID。日付_時刻_車両_場所",
+      "title": "Drive Id",
+      "type": "string"
+    },
+    "driver": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Driver"
+    },
+    "ego_pose_backend": {
+      "$ref": "#/$defs/EgoPoseBackend"
+    },
+    "location": {
+      "description": "→ nuScenes log.location",
+      "title": "Location",
+      "type": "string"
+    },
+    "platform": {
+      "description": "platform ID (フォルダ名と一致)",
+      "title": "Platform",
+      "type": "string"
+    },
+    "recorder_version": {
+      "title": "Recorder Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "description": "書き込み時の shasou-core スキーマ版。読み手は MAJOR 一致を要求",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sensor_config": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "正規チャネル名 -> 実トピック名。RADAR 含む",
+      "title": "Sensor Config",
+      "type": "object"
+    },
+    "source": {
+      "$ref": "#/$defs/DataSource"
+    },
+    "status": {
+      "$ref": "#/$defs/DriveStatus",
+      "default": "recorded"
+    },
+    "uuid": {
+      "description": "機械的一意性のための UUID",
+      "title": "Uuid",
+      "type": "string"
+    },
+    "vehicle": {
+      "title": "Vehicle",
+      "type": "string"
+    },
+    "weather": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "→ scene.description の素材",
+      "title": "Weather"
+    }
+  },
+  "required": [
+    "drive_id",
+    "uuid",
+    "source",
+    "platform",
+    "vehicle",
+    "ego_pose_backend",
+    "calib_id",
+    "date_captured",
+    "location",
+    "recorder_version",
+    "sensor_config"
+  ],
+  "title": "DriveManifest",
+  "type": "object"
+}

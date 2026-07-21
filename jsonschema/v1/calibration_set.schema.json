@@ -1,0 +1,208 @@
+{
+  "$defs": {
+    "CameraIntrinsics": {
+      "additionalProperties": false,
+      "description": "カメラ内部パラメータの実測値。\n\n実車は歪みあり raw を前提とし、ここには実測パラメータをそのまま持つ。\n歪み補正 (undistort) と nuScenes camera_intrinsic への変換は下流\n(エクスポータ) の責務で、生値に焼き込まない。",
+      "properties": {
+        "cx": {
+          "description": "主点 x [px]",
+          "title": "Cx",
+          "type": "number"
+        },
+        "cy": {
+          "description": "主点 y [px]",
+          "title": "Cy",
+          "type": "number"
+        },
+        "distortion": {
+          "description": "歪み係数 (モデル別の並び)。空は無歪み",
+          "items": {
+            "type": "number"
+          },
+          "title": "Distortion",
+          "type": "array"
+        },
+        "fx": {
+          "description": "焦点距離 x [px]",
+          "exclusiveMinimum": 0,
+          "title": "Fx",
+          "type": "number"
+        },
+        "fy": {
+          "description": "焦点距離 y [px]",
+          "exclusiveMinimum": 0,
+          "title": "Fy",
+          "type": "number"
+        },
+        "height": {
+          "description": "このキャリブが有効な画像高さ [px]",
+          "minimum": 1,
+          "title": "Height",
+          "type": "integer"
+        },
+        "model": {
+          "$ref": "#/$defs/CameraIntrinsicsModel",
+          "description": "内部パラメータモデル。ChannelSpec の期待宣言と同一語彙"
+        },
+        "width": {
+          "description": "このキャリブが有効な画像幅 [px]",
+          "minimum": 1,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "model",
+        "fx",
+        "fy",
+        "cx",
+        "cy",
+        "width",
+        "height"
+      ],
+      "title": "CameraIntrinsics",
+      "type": "object"
+    },
+    "CameraIntrinsicsModel": {
+      "description": "カメラ内部パラメータの型参照 (構成上の宣言)。\n\n実測係数は calibration.py (CameraIntrinsics) が持つ。ここでは\n「このカメラのキャリブがどのモデルで表現されるべきか」だけを宣言する。",
+      "enum": [
+        "pinhole_plumb_bob",
+        "fisheye_equidistant"
+      ],
+      "title": "CameraIntrinsicsModel",
+      "type": "string"
+    },
+    "QuaternionXYZW": {
+      "additionalProperties": false,
+      "description": "単位クォータニオン。ROS 順 (x, y, z, w) で格納する。\n\n許容誤差 1e-3 以内で正規化されていることを検証する。\nnuScenes の (w, x, y, z) への並び替えはエクスポータの責務。",
+      "properties": {
+        "w": {
+          "title": "W",
+          "type": "number"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z",
+        "w"
+      ],
+      "title": "QuaternionXYZW",
+      "type": "object"
+    },
+    "SensorCalibEntry": {
+      "additionalProperties": false,
+      "description": "calibration 内の 1 センサ分。変換で 1 calibrated_sensor に展開される。",
+      "properties": {
+        "channel": {
+          "title": "Channel",
+          "type": "string"
+        },
+        "extrinsics": {
+          "$ref": "#/$defs/SensorExtrinsics",
+          "description": "base_link 基準の実測搭載位置姿勢 (全センサ共通)"
+        },
+        "intrinsics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CameraIntrinsics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "カメラ内部パラメータの実測値。カメラチャネルのみ"
+        }
+      },
+      "required": [
+        "channel",
+        "extrinsics"
+      ],
+      "title": "SensorCalibEntry",
+      "type": "object"
+    },
+    "SensorExtrinsics": {
+      "additionalProperties": false,
+      "description": "base_link 基準のセンサ実測搭載位置姿勢。\n\n- translation: base_link → センサフレームの平行移動 [m]\n- rotation: 単位クォータニオン、ROS 順 (x, y, z, w)。nuScenes の\n  (w, x, y, z) への並び替えは下流の責務でここでは行わない\n- カメラは光学フレーム規約 (Z前 / X右 / Y下) に従う値を持つ\n\n設計搭載位置 (公称値) は platform.py の ChannelSpec.nominal_mount 側。",
+      "properties": {
+        "rotation": {
+          "$ref": "#/$defs/QuaternionXYZW"
+        },
+        "translation": {
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "required": [
+        "translation",
+        "rotation"
+      ],
+      "title": "SensorExtrinsics",
+      "type": "object"
+    },
+    "Vector3": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "title": "Vector3",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "1 回のキャリブレーション (calib_id で識別)。複数センサを含む。",
+  "properties": {
+    "calib_id": {
+      "title": "Calib Id",
+      "type": "string"
+    },
+    "captured_at": {
+      "format": "date",
+      "title": "Captured At",
+      "type": "string"
+    },
+    "entries": {
+      "description": "各センサのキャリブ。1 エントリ = 1 calibrated_sensor",
+      "items": {
+        "$ref": "#/$defs/SensorCalibEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+    }
+  },
+  "required": [
+    "calib_id",
+    "captured_at",
+    "entries"
+  ],
+  "title": "CalibrationSet",
+  "type": "object"
+}

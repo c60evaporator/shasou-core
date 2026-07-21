@@ -1,0 +1,110 @@
+{
+  "$defs": {
+    "Datum": {
+      "additionalProperties": false,
+      "description": "local ENU 原点の測地座標。軌跡座標系の基準。\n\nlocation 単位で固定し、同一 location の複数 drive が同じ座標系に乗るように\nする。studio の SRID 4326 変換はこの原点から決まる。",
+      "properties": {
+        "altitude": {
+          "description": "楕円体高またはジオイド高 (メートル)",
+          "title": "Altitude",
+          "type": "number"
+        },
+        "geoid_reference": {
+          "default": "WGS84",
+          "description": "測地系。CARLA では OpenDRIVE geoReference 由来",
+          "title": "Geoid Reference",
+          "type": "string"
+        },
+        "latitude": {
+          "maximum": 90.0,
+          "minimum": -90.0,
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "maximum": 180.0,
+          "minimum": -180.0,
+          "title": "Longitude",
+          "type": "number"
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude",
+        "altitude"
+      ],
+      "title": "Datum",
+      "type": "object"
+    },
+    "EgoPoseBackend": {
+      "description": "自己位置推定バックエンド。共有語彙 (選択肢 B)。\n\n2 箇所で使われるが意味づけが異なる:\n- manifest.ego_pose_backend: このドライブの *推奨/既定* 手法 (弱い宣言)。\n  後から他手法で軌跡を作っても矛盾しない。\n- TrajectoryMetadata.backend: この軌跡成果物を *実際に作った* 手法 (来歴)。\n1 ドライブから複数 backend の軌跡が併存できる (1 対多)。値集合は共有し、\n1 対 1 制約は課さない。",
+      "enum": [
+        "ppk-ins",
+        "lio-graph",
+        "ndt-map",
+        "carla-gt"
+      ],
+      "title": "EgoPoseBackend",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "1 つの軌跡成果物のメタデータ。",
+  "properties": {
+    "backend": {
+      "$ref": "#/$defs/EgoPoseBackend",
+      "description": "この成果物を実際に生成した手法 (来歴)。manifest の推奨手法とは独立で、1 drive に複数 backend の成果物が併存しうる"
+    },
+    "backend_version": {
+      "description": "生成器のバージョン。同一 backend でも改良で作り直せる",
+      "title": "Backend Version",
+      "type": "string"
+    },
+    "datum": {
+      "$ref": "#/$defs/Datum"
+    },
+    "drive_id": {
+      "title": "Drive Id",
+      "type": "string"
+    },
+    "end_timestamp": {
+      "description": "エポックからのナノ秒整数",
+      "minimum": 0,
+      "title": "End Timestamp",
+      "type": "integer"
+    },
+    "frame_id": {
+      "default": "map",
+      "description": "軌跡の座標フレーム。datum を原点とする local ENU",
+      "title": "Frame Id",
+      "type": "string"
+    },
+    "point_count": {
+      "minimum": 0,
+      "title": "Point Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "start_timestamp": {
+      "description": "エポックからのナノ秒整数",
+      "minimum": 0,
+      "title": "Start Timestamp",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "drive_id",
+    "backend",
+    "backend_version",
+    "datum",
+    "point_count",
+    "start_timestamp",
+    "end_timestamp"
+  ],
+  "title": "TrajectoryMetadata",
+  "type": "object"
+}

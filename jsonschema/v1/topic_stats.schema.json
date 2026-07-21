@@ -1,0 +1,223 @@
+{
+  "$defs": {
+    "DiskStats": {
+      "additionalProperties": false,
+      "description": "収録中のディスク状況。収録失敗の兆候を残す。すべて任意。",
+      "properties": {
+        "min_free_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "収録中の空き容量の最小値 [bytes]",
+          "title": "Min Free Bytes"
+        },
+        "total_bytes_written": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "書き込み総量 [bytes]",
+          "title": "Total Bytes Written"
+        },
+        "write_error_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "書き込みエラー回数",
+          "title": "Write Error Count"
+        }
+      },
+      "title": "DiskStats",
+      "type": "object"
+    },
+    "TopicStat": {
+      "additionalProperties": false,
+      "description": "1 トピック分の受信統計。\n\n計測不能な項目は None にする (メッセージ 0 件で平均レートが出せない、\ngt 系で契約上の期待レートが決まっていない、など)。",
+      "properties": {
+        "channel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "対応する正規チャネル名。gt 系・車両状態など、チャネルに紐づかないトピックは None",
+          "title": "Channel"
+        },
+        "drop_rate": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "推定ドロップ率 (期待に対する取りこぼし割合)。expected_hz が無ければ算出できず None",
+          "title": "Drop Rate"
+        },
+        "expected_hz": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "期待レート [Hz]。不明なら None",
+          "title": "Expected Hz"
+        },
+        "first_timestamp": {
+          "anyOf": [
+            {
+              "description": "エポックからのナノ秒整数",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最初の受信時刻 [ns]。0 件なら None",
+          "title": "First Timestamp"
+        },
+        "last_timestamp": {
+          "anyOf": [
+            {
+              "description": "エポックからのナノ秒整数",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最後の受信時刻 [ns]。0 件なら None",
+          "title": "Last Timestamp"
+        },
+        "max_gap_ns": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最大受信間隔 [ns]。瞬間的な欠落の検出用",
+          "title": "Max Gap Ns"
+        },
+        "measured_hz": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "実測平均レート [Hz]。0/1 件で算出できなければ None",
+          "title": "Measured Hz"
+        },
+        "message_count": {
+          "description": "受信メッセージ総数",
+          "minimum": 0,
+          "title": "Message Count",
+          "type": "integer"
+        },
+        "topic_name": {
+          "description": "実トピック名 (manifest の値と対応)",
+          "title": "Topic Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic_name",
+        "message_count"
+      ],
+      "title": "TopicStat",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "topic_stats.json 全体。1 ドライブ分の収録健全性。",
+  "properties": {
+    "disk": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DiskStats"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "drive_id": {
+      "title": "Drive Id",
+      "type": "string"
+    },
+    "duration_ns": {
+      "description": "収録全体の長さ [ns]",
+      "minimum": 0,
+      "title": "Duration Ns",
+      "type": "integer"
+    },
+    "schema_version": {
+      "default": "0.1.0",
+      "description": "書き込み時の shasou-core スキーマ版",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stats": {
+      "description": "トピックごとの受信統計",
+      "items": {
+        "$ref": "#/$defs/TopicStat"
+      },
+      "title": "Stats",
+      "type": "array"
+    }
+  },
+  "required": [
+    "drive_id",
+    "duration_ns",
+    "stats"
+  ],
+  "title": "TopicStats",
+  "type": "object"
+}

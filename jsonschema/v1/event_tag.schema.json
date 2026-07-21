@@ -1,0 +1,48 @@
+{
+  "$defs": {
+    "EventType": {
+      "description": "イベントの分類 (閉じた固定語彙)。具体的な中身は label が持つ。",
+      "enum": [
+        "interesting",
+        "marker",
+        "incident",
+        "takeover",
+        "system"
+      ],
+      "title": "EventType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "events.jsonl の 1 行 = 1 イベント。ROS EventTag のペイロードと同一契約。",
+  "properties": {
+    "label": {
+      "description": "具体的な中身 (cut-in / construction zone 等)。自由記述",
+      "minLength": 1,
+      "title": "Label",
+      "type": "string"
+    },
+    "source": {
+      "description": "誰が付けたか。既知値は EventSource、独自値も可",
+      "title": "Source",
+      "type": "string"
+    },
+    "timestamp": {
+      "description": "イベント発生時刻 (エポックからの ns 整数)",
+      "minimum": 0,
+      "title": "Timestamp",
+      "type": "integer"
+    },
+    "type": {
+      "$ref": "#/$defs/EventType"
+    }
+  },
+  "required": [
+    "timestamp",
+    "type",
+    "label",
+    "source"
+  ],
+  "title": "EventTag",
+  "type": "object"
+}

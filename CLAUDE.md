@@ -181,66 +181,74 @@ core は台数構成を固定しない。core が持つのは**命名規約** (`
 | `schemas/topics.py` | MCAP トピック契約をデータとして定義 | RADAR=velocity_radial のみ必須。Depth は gt 配下 |
 | `schemas/manifest.py` | DriveManifest | チャネルは命名規約のみ検証 (実在検証は validation) |
 | `schemas/trajectory.py` | 軌跡成果物スキーマ | 選択肢 B: 1 drive 1 対多 backend |
+| `schemas/platform.py` | Platform/ChannelSpec/CameraConfig/VehicleParams | 構成の**宣言** (公称値・型参照)。実測値は calibration 側 |
+| `schemas/calibration.py` | CalibrationSet/SensorCalibEntry/CameraIntrinsics/SensorExtrinsics | キャリブ 1 回ごとの**実測値**。token は derived_token で決定的生成 |
+| `schemas/events.py` | EventTag (events.jsonl 1 行 = ROS EventTag ペイロード) | type=閉じた enum / source=str (規約強制) / label=自由。timestamp のみ strict |
+| `schemas/health.py` | TopicStat/TopicStats/DiskStats (topic_stats.json) | 計測値の器。良否判定は持たない (閾値は呼び出し側) |
 | `io/trajectory_io.py` | Parquet 読み書き (extra) | pyarrow 依存はここだけ |
-| `validation.py` | 横断検証 (manifest×platform×calib) | Issue リストを返す (例外投げない) |
+| `validation.py` | 横断検証 (manifest×platform×calib×topics) | Issue リストを返す (例外投げない) |
+| `scripts/export_jsonschema.py` | 全スキーマの JSON Schema 生成 / `--check` | 出力は決定的 (sort_keys)。生成物は手編集禁止 |
+| `scripts/check_dependencies.py` | 依存規律の番人 (§1.1) | io を除く全モジュールを pyarrow 抜きで import |
+| `jsonschema/v1/*.json` | 上記の生成物 (コミット対象) | 手で書かない。CI が差分ゼロを検証 |
+| `.github/workflows/ci.yml` | pytest + JSON Schema 差分ゼロ + 依存規律 | Python 3.10 / 3.13 マトリクス |
 
-### 骨格のみ (CLI で肉付けする)
-| ファイル | 現状 | やること |
-|---|---|---|
-| `schemas/platform.py` | Platform/ChannelSpec/VehicleParams の骨格 | §4.1 参照 |
-| `schemas/calibration.py` | CalibrationSet/SensorCalibEntry の骨格 | §4.2 参照 |
-
-### 未実装 (CLI で新規作成)
-| ファイル | やること |
+### 残タスク
+| 箇所 | やること |
 |---|---|
-| `schemas/events.py` | EventTag (events.jsonl 1 行)。§4.3 |
-| `schemas/health.py` | TopicStats (topic_stats.json)。§4.4 |
-| `scripts/export_jsonschema.py` | 全スキーマの JSON Schema 生成。§4.5 |
-| `jsonschema/v1/*.json` | 上記の生成物 (コミット対象) |
-| CI 設定 | pytest + JSON Schema 差分ゼロ検証。§4.6 |
+| `validation.py` の `TODO(next)` | `ChannelSpec.nominal_mount` (設計搭載位置) と `SensorExtrinsics` (実測) の乖離検証。許容閾値 (並進 [m] / 回転 [rad]) の設計が必要 |
 
 ---
 
-## 4. CLI 実装タスク (TODO(cli))
+## 4. 実装済みタスクで確定した設計判断
 
-### 4.1 platform.py の肉付け
-`grep TODO(cli) src/shasou_core/schemas/platform.py` の箇所。
-- **VehicleParams**: `steering_gear_ratio` (ハンドル角→実舵角)、`max_steer_angle_rad`
-  (CARLA 正規化 steer→rad)、`speed_sign_rule`、`brake_normalization` (何を 1.0 と
-  するか)、`base_link_offset` (車両モデル原点→後軸中心のオフセット Vector3)。
-  これらは車両固有で、CARLA ブリッジ/CAN デコーダのアダプタが変換に使う
-- **ChannelSpec**: 内部/外部パラメータの型参照、解像度、FOV 等。カメラは光学フレーム
-  規約に従う
-- 既存の `_modality_matches_name` バリデータ (名前と modality の矛盾を弾く) は壊さない
+§4 の CLI 実装タスクは全て完了済み。以降の変更で前提を崩さないよう、そのとき
+確定した判断を記録する (背景の議論は各ファイルの docstring にもある)。
 
-### 4.2 calibration.py の肉付け
-- **CameraIntrinsics**: 焦点距離・主点・歪み係数。実車は歪みあり raw を前提、
-  nuScenes 出力時に補正 (§2.3)
-- **SensorExtrinsics**: base_link 基準の平行移動+回転。カメラは光学フレーム規約
-- calibrated_sensor token は `derived_token(calib_id, channel)` で決定的生成 (§2.2)
-- 1 CalibrationSet の各 entry が 1 calibrated_sensor に展開される (1:N)
+### 4.1 platform.py / 4.2 calibration.py: 宣言 vs 実測の切り分け
+`ChannelSpec` は**構成上の宣言** (公称解像度・FOV・期待する内部パラメータ
+モデルの型参照・設計搭載位置 `nominal_mount`) を持ち、係数値は持たない。
+`CalibrationSet` の entry は**キャリブ 1 回ごとの実測値** (`CameraIntrinsics`
+の実測係数・`SensorExtrinsics` の実測搭載位置)。両者に現れる解像度・搭載位置は
+重複ではなく公称/実測のペアで、照合は validation.py の責務。
+歪みモデル語彙 `CameraIntrinsicsModel` は platform.py が定義元で calibration.py
+が import して共有する (照合が enum 比較で済む)。
+calibrated_sensor token は `derived_token(calib_id, channel)` で決定的生成 (§2.2)。
+`VehicleParams` は Platform にネストされる区画で、車種の識別は
+`Platform.vehicle_type` が唯一の正 (二重管理しない)。
 
-### 4.3 events.py
-EventTag: `timestamp` (ns)、`type` (固定語彙 enum: interesting/marker 等)、`label`
-(語彙集)、`source` (driver_button/tablet/carla_scenario/auto_vlm 等)。人間起点タグ
-(収録中) と自動タグ (収録後) が同フォーマットで共存し source で区別 (§2.1)。
+### 4.3 events.py: 閉じた軸と開いた軸を分ける
+`type` は閉じた enum (粗い分類軸。下流が網羅的に分岐するため固定語彙。追加は
+SCHEMA_VERSION 更新を伴う)、`label` は自由記述 (具体性はここが担う)、`source`
+は **str 型**で既知値のみ `EventSource` に置き、命名規約 `^[a-z][a-z0-9_]*$` を
+validator で強制する (OSS 利用者が core を変更せず独自デバイスを足せる)。
+`timestamp` のみ `strict=True`。素の `TimestampNs` では整数値 float
+(`1752641234.0`) が黙って int に強制変換され、秒を ns 欄に入れる事故が通るため。
 
-### 4.4 health.py
-TopicStats: トピックごとの Hz・ドロップ率・想定との差分。topic_stats.json の 1 レコード。
+### 4.4 health.py: 計測値の器に徹する
+`TopicStats` は良否判定 (`is_healthy()` 等) を持たない。閾値は platform や運用で
+変わり、core に置くと閾値変更が SCHEMA_VERSION 更新を伴うため。判定は
+呼び出し側 (recorder のヘルスモニタ / studio の取り込みフィルタ) の責務。
 
-### 4.5 export_jsonschema.py
-全トップレベルスキーマ (DriveManifest / TrajectoryMetadata / Platform /
-CalibrationSet / EventTag / TopicStats) を `model_json_schema()` で
-`jsonschema/v1/<name>.schema.json` へ出力。決定的な出力 (キー順ソート) にする。
+### 4.5 export_jsonschema.py: 決定的出力
+`sort_keys=True` / `indent=2` / `ensure_ascii=False` / 末尾改行 1 つ。
+`model_json_schema()` の出力に手を加えない (`$id` の後付けもしない)。
+出力先の `v1` は**定数**で、SemVer の MAJOR とは連動させない (0.x = 初期開発中と
+契約の世代番号は別概念)。運用規則: 0.x の間は v1、MAJOR≥2 で v2 を切る。
 
-### 4.6 validation.py の validate_observed_topics 拡張
-現状は sensor_config 宣言トピックの存在確認のみ。`topics.contracts_for_source()`
-と突き合わせ、source (carla/real) 別に gt 系・車両状態・基盤トピックの過不足も
-検証する。CARLA なら gt/clock 必須、real ならそれらが無いこと、を確認。
+### 4.6 validation.py: 契約との突き合わせと重大度の非対称
+sensor_config に現れないトピック (gt/vehicle/clock) は、名前空間がデプロイ依存
+なので**末尾セグメントの後方一致**で判定する (期待末尾は
+`resolve_topic_name("", channel, contract)` から得る)。per_channel 契約は
+sensor_config を contract.modality で絞って展開し、gt_depth はカメラチャネルに
+展開する。重大度は「欠けるとドライブが使えないもの」を ERROR、「構成・運用で
+変わりうるもの」を WARNING とし、Issue code に非対称を反映する
+(`gt_topic_absent` / `gt_depth_topic_absent`、`vehicle_topic_absent` /
+`vehicle_aux_topic_absent` 等)。
 
-### 4.7 テスト
-新規スキーマごとに、単体検証 + JSON/YAML 往復一致テスト。既存 50 件は壊さない。
-`ShasouModel` は `extra="forbid"` なので未知フィールド拒否もテストする。
+### 4.7 テスト方針
+新規スキーマごとに単体検証 + JSON/YAML 往復一致。`ShasouModel` は
+`extra="forbid"` なので未知フィールド拒否もテストする。生成物は
+「コードから生成し直して一致するか」をテストで固定する (§1.3)。
 
 ---
 
@@ -302,8 +310,17 @@ LocalFileProvider でスタンドアロンも可)。使用した定義の版を 
 
 ```bash
 pip install -e ".[dev,io]"     # 開発セットアップ
-pytest                          # 全テスト (現在 50 件)
-python scripts/export_jsonschema.py   # JSON Schema 再生成 (実装後)
+pytest                          # 全テスト (現在 177 件。io 無しだと 1 件 skip)
+python scripts/export_jsonschema.py           # JSON Schema 再生成
+python scripts/export_jsonschema.py --check   # 生成物がコードと一致するか
+```
+
+依存規律の検証は io extra を**入れない**環境で行う (pyarrow があると空振りする):
+
+```bash
+pip install -e ".[dev]"
+python scripts/check_dependencies.py
 ```
 
 変更を入れたら: テストが通ること + JSON Schema 差分ゼロ + §1 の依存規律を確認。
+CI (`.github/workflows/ci.yml`) がこの 3 点を push / PR で自動検証する。

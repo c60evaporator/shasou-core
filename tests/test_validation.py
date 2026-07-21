@@ -1,9 +1,20 @@
 import pytest
 
-from shasou_core.schemas.calibration import CalibrationSet, SensorCalibEntry
-from shasou_core.schemas.common import DataSource, EgoPoseBackend, Modality
+from shasou_core.schemas.calibration import (
+    CalibrationSet,
+    CameraIntrinsics,
+    SensorCalibEntry,
+    SensorExtrinsics,
+)
+from shasou_core.schemas.common import (
+    DataSource,
+    EgoPoseBackend,
+    Modality,
+    QuaternionXYZW,
+    Vector3,
+)
 from shasou_core.schemas.manifest import DriveManifest
-from shasou_core.schemas.platform import ChannelSpec, Platform
+from shasou_core.schemas.platform import CameraIntrinsicsModel, ChannelSpec, Platform
 from shasou_core.validation import (
     Severity,
     validate_calibration_coverage,
@@ -11,6 +22,25 @@ from shasou_core.validation import (
     validate_manifest_against_platform,
     validate_observed_topics,
 )
+
+
+def _calib_entry(channel):
+    """新契約 (extrinsics 必須・カメラは intrinsics 必須) を満たす最小 entry。"""
+    intrinsics = None
+    if channel.startswith("CAM_"):
+        intrinsics = CameraIntrinsics(
+            model=CameraIntrinsicsModel.PINHOLE_PLUMB_BOB,
+            fx=1000.0, fy=1000.0, cx=800.0, cy=450.0,
+            width=1600, height=900,
+        )
+    return SensorCalibEntry(
+        channel=channel,
+        extrinsics=SensorExtrinsics(
+            translation=Vector3(x=0.0, y=0.0, z=0.0),
+            rotation=QuaternionXYZW.identity(),
+        ),
+        intrinsics=intrinsics,
+    )
 
 
 def _platform(channels=(("CAM_FRONT", Modality.CAMERA), ("LIDAR_TOP", Modality.LIDAR))):
@@ -80,7 +110,7 @@ class TestCalibrationCoverage:
         return CalibrationSet(
             calib_id=calib_id,
             captured_at="2026-07-01",
-            entries=[SensorCalibEntry(channel=c) for c in channels],
+            entries=[_calib_entry(c) for c in channels],
         )
 
     def test_full_coverage_ok(self):
@@ -121,7 +151,7 @@ class TestValidateDrive:
     def test_combined_ok(self):
         calib = CalibrationSet(
             calib_id="calib_v001", captured_at="2026-07-01",
-            entries=[SensorCalibEntry(channel=c) for c in ("CAM_FRONT", "LIDAR_TOP")])
+            entries=[_calib_entry(c) for c in ("CAM_FRONT", "LIDAR_TOP")])
         r = validate_drive(
             _manifest(), _platform(), calibration=calib,
             observed_topic_names={

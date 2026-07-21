@@ -14,9 +14,15 @@ from shasou_core.schemas.common import (
     Vector3,
 )
 from shasou_core.schemas.manifest import DriveManifest
-from shasou_core.schemas.platform import CameraIntrinsicsModel, ChannelSpec, Platform
+from shasou_core.schemas.platform import (
+    CameraConfig,
+    CameraIntrinsicsModel,
+    ChannelSpec,
+    Platform,
+)
 from shasou_core.validation import (
     Severity,
+    validate_calibration_against_platform,
     validate_calibration_coverage,
     validate_drive,
     validate_manifest_against_platform,
@@ -72,6 +78,46 @@ def _manifest(sensor_config=None, **overrides):
     )
     data.update(overrides)
     return DriveManifest(**data)
+
+
+def _carla_manifest(**overrides):
+    data = dict(source=DataSource.CARLA, ego_pose_backend=EgoPoseBackend.CARLA_GT)
+    data.update(overrides)
+    return _manifest(**data)
+
+
+# 規約どおりに収録された bag のトピック集合。名前空間は sensor_config と揃える
+_COMMON_TOPICS = {
+    "/sensing/cam_front/image_raw/compressed",
+    "/sensing/cam_front/camera_info",
+    "/sensing/lidar_top/points",
+    "/sensing/imu",
+    "/sensing/gnss_fix",
+    "/sensing/events",
+    "/sensing/tf_static",
+    "/sensing/vehicle/drive_state",
+    "/sensing/vehicle/pedals",
+    "/sensing/vehicle/reverse",
+    "/sensing/vehicle/handbrake",
+}
+_GT_TOPICS = {
+    "/sensing/gt/ego_odom",
+    "/sensing/gt/objects",
+    "/sensing/gt/agent_plan",
+    "/sensing/gt/depth_cam_front/image",
+    "/clock",
+}
+
+
+def _observed(source=DataSource.REAL, drop=(), add=()):
+    topics = set(_COMMON_TOPICS)
+    if source == DataSource.CARLA:
+        topics |= _GT_TOPICS
+    return (topics - set(drop)) | set(add)
+
+
+def _codes(result, severity):
+    return {i.code for i in result.issues if i.severity == severity}
 
 
 class TestManifestVsPlatform:
@@ -138,13 +184,133 @@ class TestObservedTopics:
         assert any(i.code == "declared_topic_absent" for i in r.errors())
 
     def test_all_present_ok(self):
+        r = validate_observed_topics(_manifest(), observed_topic_names=_observed())
+        assert r.ok
+        assert not r.issues
+
+    def test_carla_all_present_ok(self):
+        r = validate_observed_topics(
+            _carla_manifest(), observed_topic_names=_observed(DataSource.CARLA))
+        assert r.ok
+        assert not r.issues
+
+    def test_carla_missing_core_gt_is_error(self):
+        r = validate_observed_topics(
+            _carla_manifest(),
+            observed_topic_names=_observed(
+                DataSource.CARLA, drop=("/sensing/gt/objects",)))
+        assert not r.ok
+        assert "gt_topic_absent" in _codes(r, Severity.ERROR)
+
+    def test_carla_missing_clock_is_error(self):
+        r = validate_observed_topics(
+            _carla_manifest(),
+            observed_topic_names=_observed(DataSource.CARLA, drop=("/clock",)))
+        assert not r.ok
+        assert "sim_topic_absent" in _codes(r, Severity.ERROR)
+
+    def test_carla_missing_gt_depth_is_warning(self):
+        # 中核 gt と違い、深度は一部カメラのみ収録する運用がありうる
+        r = validate_observed_topics(
+            _carla_manifest(),
+            observed_topic_names=_observed(
+                DataSource.CARLA, drop=("/sensing/gt/depth_cam_front/image",)))
+        assert r.ok
+        assert "gt_depth_topic_absent" in _codes(r, Severity.WARNING)
+
+    def test_missing_drive_state_is_error(self):
+        # E2E 学習の行動ラベル。欠けるとドライブが学習に使えない
         r = validate_observed_topics(
             _manifest(),
-            observed_topic_names={
-                "/sensing/cam_front/image_raw/compressed",
-                "/sensing/lidar_top/points",
-            })
+            observed_topic_names=_observed(drop=("/sensing/vehicle/drive_state",)))
+        assert not r.ok
+        assert "vehicle_topic_absent" in _codes(r, Severity.ERROR)
+
+    def test_missing_handbrake_is_warning(self):
+        # 補助フラグなので取り込みは通す
+        r = validate_observed_topics(
+            _manifest(),
+            observed_topic_names=_observed(drop=("/sensing/vehicle/handbrake",)))
         assert r.ok
+        assert "vehicle_aux_topic_absent" in _codes(r, Severity.WARNING)
+
+    def test_missing_camera_info_is_warning(self):
+        r = validate_observed_topics(
+            _manifest(),
+            observed_topic_names=_observed(drop=("/sensing/cam_front/camera_info",)))
+        assert r.ok
+        assert "sensor_topic_absent" in _codes(r, Severity.WARNING)
+
+    def test_real_with_gt_topic_is_warning(self):
+        # 実車データに特権情報の混入は異常だが、取り込み自体は可能
+        r = validate_observed_topics(
+            _manifest(), observed_topic_names=_observed(add=("/sensing/gt/ego_odom",)))
+        assert r.ok
+        assert "unexpected_topic_for_source" in _codes(r, Severity.WARNING)
+
+    def test_real_with_clock_is_warning(self):
+        r = validate_observed_topics(
+            _manifest(), observed_topic_names=_observed(add=("/clock",)))
+        assert r.ok
+        assert "unexpected_topic_for_source" in _codes(r, Severity.WARNING)
+
+
+class TestCalibrationVsPlatform:
+    """ChannelSpec (構成の宣言) と CameraIntrinsics (実測) の整合。"""
+
+    def _platform_with_camera(self, **camera_kwargs):
+        data = dict(
+            intrinsics_model=CameraIntrinsicsModel.PINHOLE_PLUMB_BOB,
+            width_px=1600, height_px=900,
+        )
+        data.update(camera_kwargs)
+        return Platform(
+            platform_id="platform_test",
+            vehicle_type="lincoln",
+            sensor_rig=[
+                ChannelSpec(
+                    channel="CAM_FRONT", modality=Modality.CAMERA,
+                    camera=CameraConfig(**data),
+                ),
+                ChannelSpec(channel="LIDAR_TOP", modality=Modality.LIDAR),
+            ],
+        )
+
+    def _calib(self):
+        return CalibrationSet(
+            calib_id="calib_v001", captured_at="2026-07-01",
+            entries=[_calib_entry(c) for c in ("CAM_FRONT", "LIDAR_TOP")])
+
+    def test_matching_declaration_ok(self):
+        # _calib_entry は plumb_bob / 1600x900 で作られる
+        r = validate_calibration_against_platform(
+            self._platform_with_camera(), self._calib())
+        assert r.ok
+        assert not r.issues
+
+    def test_intrinsics_model_mismatch_is_error(self):
+        r = validate_calibration_against_platform(
+            self._platform_with_camera(
+                intrinsics_model=CameraIntrinsicsModel.FISHEYE_EQUIDISTANT),
+            self._calib())
+        assert not r.ok
+        assert "intrinsics_model_mismatch" in _codes(r, Severity.ERROR)
+
+    def test_resolution_mismatch_is_warning(self):
+        # 公称と実測のズレは運用上ありうるので取り込みは通す
+        r = validate_calibration_against_platform(
+            self._platform_with_camera(width_px=1920, height_px=1080),
+            self._calib())
+        assert r.ok
+        assert "resolution_mismatch" in _codes(r, Severity.WARNING)
+
+    def test_undeclared_fields_are_not_compared(self):
+        # 宣言側が未記入なら照合しない (手書き platform 定義を圧迫しない)
+        r = validate_calibration_against_platform(
+            self._platform_with_camera(intrinsics_model=None,
+                                       width_px=None, height_px=None),
+            self._calib())
+        assert not r.issues
 
 
 class TestValidateDrive:
@@ -154,10 +320,7 @@ class TestValidateDrive:
             entries=[_calib_entry(c) for c in ("CAM_FRONT", "LIDAR_TOP")])
         r = validate_drive(
             _manifest(), _platform(), calibration=calib,
-            observed_topic_names={
-                "/sensing/cam_front/image_raw/compressed",
-                "/sensing/lidar_top/points",
-            })
+            observed_topic_names=_observed())
         assert r.ok
 
     def test_partial_acceptance_shape(self):

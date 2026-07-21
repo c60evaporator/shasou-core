@@ -10,6 +10,7 @@
 2. manifest.calib_id が指す CalibrationSet が platform の全センサを網羅するか
 3. manifest.platform が Platform.platform_id と一致するか
 4. (bag 検証用) 実トピック集合が source 別トピック契約を満たすか
+5. platform の構成宣言 (ChannelSpec) と calibration の実測値が整合するか
 
 設計方針
 --------
@@ -27,6 +28,13 @@ from .constants import channel_modality
 from .schemas.calibration import CalibrationSet
 from .schemas.manifest import DriveManifest
 from .schemas.platform import Platform
+from .schemas.topics import (
+    ALL_CONTRACTS,
+    TopicContract,
+    TopicRole,
+    contracts_for_source,
+    resolve_topic_name,
+)
 
 
 class Severity(str, Enum):
@@ -156,16 +164,77 @@ def validate_calibration_coverage(
 # --------------------------------------------------------------------------
 
 
+# 中核の特権情報。CARLA では trajectory / sample_annotation の源泉であり、
+# 欠けるとドライブが変換できない。gt_depth は補助的な深度ラベルなので別扱い。
+_CORE_GT_KEYS = frozenset({"gt_ego_odom", "gt_objects", "gt_agent_plan"})
+
+# E2E 学習の行動ラベル (steering / throttle / brake)。欠けると学習に使えない。
+# reverse / handbrake は補助フラグなので別扱い。
+_REQUIRED_VEHICLE_KEYS = frozenset({"vehicle_drive_state", "vehicle_pedals"})
+
+
+def _expected_suffixes(channel: str, contract: TopicContract) -> set[str]:
+    """契約が固定する期待トピック名の「末尾セグメント」候補を返す。
+
+    名前空間はデプロイ依存 (sensor_config の実名が正) なので決め打ちせず、
+    規約が固定する末尾のみを見る。resolve_topic_name を名前空間なしで呼ぶと
+    末尾そのものが得られる (例: "/gt/depth_cam_front/image", "/clock")。
+    非 per_channel の論理キーは §5 の名前空間形式 ("/vehicle/drive_state") でも
+    書かれうるため、最初の "_" を "/" に置換した変種も候補に加える。
+    """
+    suffixes = {resolve_topic_name("", channel, contract)}
+    if not contract.per_channel and "_" in contract.key:
+        suffixes.add("/" + contract.key.replace("_", "/", 1))
+    return suffixes
+
+
+def _is_observed(observed_topic_names: set[str], suffixes: set[str]) -> bool:
+    return any(t.endswith(s) for t in observed_topic_names for s in suffixes)
+
+
+def _channels_for(manifest: DriveManifest, contract: TopicContract) -> set[str]:
+    """per_channel 契約を展開する対象チャネル (sensor_config を modality で絞る)。"""
+    return {
+        ch for ch in manifest.sensor_config
+        if channel_modality(ch) == contract.modality.value
+    }
+
+
+def _absence_issue(contract: TopicContract) -> tuple[Severity, str]:
+    """契約が満たされなかったときの重大度と Issue code。
+
+    「宣言あって実体無し=ERROR、余剰=WARNING」の非対称に加え、契約側が存在を
+    要求するトピックのうち、欠けるとドライブが使い物にならないものを ERROR、
+    構成・運用で変わりうるものを WARNING とする。
+    """
+    if contract.key in _CORE_GT_KEYS:
+        return Severity.ERROR, "gt_topic_absent"
+    if contract.role == TopicRole.GROUND_TRUTH:
+        # gt_depth。一部カメラのみ収録する運用がありうる
+        return Severity.WARNING, "gt_depth_topic_absent"
+    if contract.role == TopicRole.SIM_ONLY:
+        return Severity.ERROR, "sim_topic_absent"
+    if contract.key in _REQUIRED_VEHICLE_KEYS:
+        return Severity.ERROR, "vehicle_topic_absent"
+    if contract.role == TopicRole.VEHICLE:
+        return Severity.WARNING, "vehicle_aux_topic_absent"
+    # imu / gnss / events / tf_static / camera_info。sensor_config は
+    # CAM_/LIDAR_/RADAR_ しか宣言できず、rig に実在するか判定できない
+    return Severity.WARNING, "sensor_topic_absent"
+
+
 def validate_observed_topics(
     manifest: DriveManifest,
     observed_topic_names: set[str],
 ) -> ValidationResult:
-    """実際に bag に存在したトピック名が sensor_config と整合するか。
+    """実際に bag に存在したトピック名が sensor_config と契約に整合するか。
 
-    sensor_config で宣言したトピックが bag に無ければ ERROR (収録漏れ)。
-    TODO(cli): source 別トピック契約 (topics.contracts_for_source) と突き合わせ、
-    gt 系や車両状態トピックの過不足も検証する。ここでは sensor_config で宣言した
-    センサトピックの存在確認のみを代表実装として置く。
+    1. sensor_config で宣言したトピックが bag に無ければ ERROR (収録漏れ)
+    2. source 別トピック契約 (contracts_for_source) の過不足。per_channel の
+       契約は sensor_config のチャネルを contract.modality で絞って展開する。
+       gt_depth は sensor_config に depth チャネルが無い (RGB と光学フレームを
+       共有する派生 GT) ため、カメラチャネルに対して展開する
+    3. REAL に gt / clock が混入していれば WARNING (異常だが取り込みは可能)
     """
     result = ValidationResult()
     declared = set(manifest.sensor_config.values())
@@ -175,6 +244,101 @@ def validate_observed_topics(
             f"sensor_config で宣言したトピック {topic} が bag に存在しない",
             topic=topic,
         )
+
+    for contract in contracts_for_source(manifest.source):
+        severity, code = _absence_issue(contract)
+        if contract.per_channel:
+            for channel in sorted(_channels_for(manifest, contract)):
+                if _is_observed(
+                    observed_topic_names, _expected_suffixes(channel, contract)
+                ):
+                    continue
+                result.add(
+                    severity, code,
+                    f"契約 {contract.key} のトピックがチャネル {channel} 分だけ "
+                    "bag に存在しない",
+                    contract=contract.key, channel=channel,
+                )
+        elif not _is_observed(observed_topic_names, _expected_suffixes("", contract)):
+            result.add(
+                severity, code,
+                f"source={manifest.source.value} で期待されるトピック "
+                f"{contract.key} が bag に存在しない",
+                contract=contract.key,
+            )
+
+    allowed_keys = {c.key for c in contracts_for_source(manifest.source)}
+    for contract in ALL_CONTRACTS:
+        if contract.key in allowed_keys:
+            continue
+        channels = (
+            sorted(_channels_for(manifest, contract)) if contract.per_channel else [""]
+        )
+        for channel in channels:
+            if not _is_observed(
+                observed_topic_names, _expected_suffixes(channel, contract)
+            ):
+                continue
+            result.add(
+                Severity.WARNING, "unexpected_topic_for_source",
+                f"source={manifest.source.value} に存在しないはずのトピック "
+                f"{contract.key} が bag にある (role={contract.role.value})",
+                contract=contract.key, channel=channel,
+            )
+    return result
+
+
+# --------------------------------------------------------------------------
+# 4. platform x calibration: 宣言 (構成) と実測の整合
+# --------------------------------------------------------------------------
+
+
+def validate_calibration_against_platform(
+    platform: Platform, calibration: CalibrationSet
+) -> ValidationResult:
+    """ChannelSpec の構成宣言と CalibrationSet の実測値が整合するか。
+
+    - 期待する内部パラメータモデルと実測モデルの不一致 -> ERROR
+      (宣言と別モデルでキャリブされている。歪み補正が破綻する)
+    - 公称解像度と実測解像度の不一致 -> WARNING
+      (運用上ありうるズレ。実測側が正だが宣言の更新漏れを知らせる)
+
+    宣言側が未記入 (None) の項目は照合しない。entry 自体の欠落は
+    validate_calibration_coverage の責務なのでここでは重複させない。
+    TODO(next): nominal_mount (設計搭載位置) と extrinsics (実測) の乖離検証。
+    許容閾値の設計 (並進 [m] / 回転 [rad] をどこで切るか) が必要。
+    """
+    result = ValidationResult()
+    entries = {e.channel: e for e in calibration.entries}
+
+    for spec in platform.sensor_rig:
+        entry = entries.get(spec.channel)
+        if spec.camera is None or entry is None or entry.intrinsics is None:
+            continue
+
+        declared_model = spec.camera.intrinsics_model
+        if declared_model is not None and declared_model != entry.intrinsics.model:
+            result.add(
+                Severity.ERROR, "intrinsics_model_mismatch",
+                f"{spec.channel}: platform の宣言モデル ({declared_model.value}) と "
+                f"キャリブ実測モデル ({entry.intrinsics.model.value}) が不一致",
+                channel=spec.channel,
+                declared=declared_model.value,
+                measured=entry.intrinsics.model.value,
+            )
+
+        declared_size = (spec.camera.width_px, spec.camera.height_px)
+        measured_size = (entry.intrinsics.width, entry.intrinsics.height)
+        if declared_size[0] is not None and declared_size != measured_size:
+            result.add(
+                Severity.WARNING, "resolution_mismatch",
+                f"{spec.channel}: platform の公称解像度 {declared_size[0]}x"
+                f"{declared_size[1]} とキャリブ実測 {measured_size[0]}x"
+                f"{measured_size[1]} が不一致",
+                channel=spec.channel,
+                declared_width=declared_size[0], declared_height=declared_size[1],
+                measured_width=measured_size[0], measured_height=measured_size[1],
+            )
     return result
 
 
@@ -198,6 +362,7 @@ def validate_drive(
     result = validate_manifest_against_platform(manifest, platform)
     if calibration is not None:
         result.merge(validate_calibration_coverage(manifest, platform, calibration))
+        result.merge(validate_calibration_against_platform(platform, calibration))
     if observed_topic_names is not None:
         result.merge(validate_observed_topics(manifest, observed_topic_names))
     return result

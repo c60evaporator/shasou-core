@@ -122,11 +122,13 @@ class ChannelSpec(ShasouModel):
 class VehicleParams(ShasouModel):
     """車両固有パラメータ。CARLA ブリッジ / CAN デコーダのアダプタが変換に使う。
 
-    platform 定義は手書きされうるため、vehicle_type 以外はすべて optional。
-    値が無いパラメータを必要とするアダプタは、その時点でエラーにする。
+    Platform にネストされる区画であり、単独で配布されることはない。車種の
+    識別は Platform.vehicle_type が唯一の正 (ここには持たない)。
+
+    platform 定義は手書きされうるため、すべて optional。値が無いパラメータを
+    必要とするアダプタは、その時点でエラーにする。
     """
 
-    vehicle_type: str
     steering_gear_ratio: Optional[float] = Field(
         default=None, gt=0,
         description="ハンドル角→前輪実舵角の変換比 (実舵角 = ハンドル角 / ratio)。"
@@ -181,15 +183,3 @@ class Platform(ShasouModel):
                     f"宣言 ({spec.modality.value}) が不一致"
                 )
         return v
-
-    @model_validator(mode="after")
-    def _vehicle_type_consistent(self) -> "Platform":
-        if (
-            self.vehicle_params is not None
-            and self.vehicle_params.vehicle_type != self.vehicle_type
-        ):
-            raise ValueError(
-                f"vehicle_params.vehicle_type ({self.vehicle_params.vehicle_type}) と "
-                f"platform.vehicle_type ({self.vehicle_type}) が不一致"
-            )
-        return self

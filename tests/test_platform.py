@@ -17,7 +17,6 @@ from shasou_core.schemas.platform import (
 
 def _full_vehicle_params(**overrides):
     data = dict(
-        vehicle_type="lincoln_mkz",
         steering_gear_ratio=15.7,
         max_steer_angle_rad=0.61,
         speed_sign_rule=SpeedSignRule.ABS_WITH_REVERSE_FLAG,
@@ -49,8 +48,8 @@ def _camera_spec(**overrides):
 
 class TestVehicleParams:
     def test_minimal(self):
-        # 手書き platform 定義を想定し、vehicle_type 以外はすべて optional
-        p = VehicleParams(vehicle_type="lincoln_mkz")
+        # 手書き platform 定義を想定し、すべて optional
+        p = VehicleParams()
         assert p.steering_gear_ratio is None
         assert p.base_link_offset is None
 
@@ -74,7 +73,6 @@ class TestVehicleParams:
     def test_enums_from_string(self):
         # JSON/YAML からは文字列値で入る
         p = VehicleParams(
-            vehicle_type="lincoln_mkz",
             speed_sign_rule="signed",
             brake_normalization="pressure",
         )
@@ -83,7 +81,10 @@ class TestVehicleParams:
 
     def test_unknown_field_rejected(self):
         with pytest.raises(ValidationError):
-            VehicleParams(vehicle_type="lincoln_mkz", wheelbase_m=2.85)
+            VehicleParams(wheelbase_m=2.85)
+        # vehicle_type は Platform 側が唯一の正。旧二重管理フィールドは弾く
+        with pytest.raises(ValidationError):
+            VehicleParams(vehicle_type="lincoln_mkz")
 
 
 class TestChannelSpec:
@@ -161,14 +162,6 @@ class TestPlatform:
                     nominal_mount=None, camera=None,
                 ),
             ]))
-
-    def test_vehicle_type_mismatch_rejected(self):
-        with pytest.raises(ValidationError):
-            Platform(**_platform(
-                vehicle_params=VehicleParams(
-                    **_full_vehicle_params(vehicle_type="prius")
-                ),
-            ))
 
     def test_json_roundtrip(self):
         p = Platform(**_platform())

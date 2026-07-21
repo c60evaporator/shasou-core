@@ -16,11 +16,66 @@ recorder / studio / エクスポータのすべてが従う。変更は SCHEMA_V
              あることを前提とし、shasou の世界に左手系のデータは存在しない。
 """
 
-from typing import Final
+import re
+from typing import Final, Optional
 
 # --------------------------------------------------------------------------
-# 正規チャネル名 (nuScenes 準拠)
+# チャネル名の規約
 # --------------------------------------------------------------------------
+# 実際のチャネル集合の「正」は platform 定義 (sensor_rig) である。
+# core はチャネル名の *命名規約* を規定するのみで、特定の台数構成を強制しない。
+#
+# 規約:
+#   - modality プレフィックス (CAM_ / LIDAR_ / RADAR_) で始まる
+#   - 続くのは大文字英字・数字・アンダースコア
+# これにより CAM_FRONT / CAM_FRONT_LEFT / CAM_FRONT_EXTRA / LIDAR_TOP /
+# RADAR_FRONT_LEFT などは通り、FOO_BAR / cam_front (小文字) は弾かれる。
+
+CAM_PREFIX: Final = "CAM_"
+LIDAR_PREFIX: Final = "LIDAR_"
+RADAR_PREFIX: Final = "RADAR_"
+
+MODALITY_PREFIXES: Final[tuple[str, ...]] = (CAM_PREFIX, LIDAR_PREFIX, RADAR_PREFIX)
+
+# プレフィックスの後ろに続く本体部分 (大文字英数字とアンダースコア、1 文字以上)
+_CHANNEL_BODY = r"[A-Z0-9]+(?:_[A-Z0-9]+)*"
+CHANNEL_NAME_PATTERN: Final = re.compile(
+    rf"^(?:{CAM_PREFIX}|{LIDAR_PREFIX}|{RADAR_PREFIX}){_CHANNEL_BODY}$"
+)
+
+
+def is_valid_channel_name(name: str) -> bool:
+    """チャネル名が命名規約を満たすか (modality プレフィックス + 文字種)。
+
+    実在するチャネルかどうか (platform に定義されているか) は判定しない。
+    それは validation.py の platform 照合の責務。
+    """
+    return bool(CHANNEL_NAME_PATTERN.match(name))
+
+
+def channel_modality(name: str) -> Optional[str]:
+    """チャネル名から modality を推定して返す ('camera'/'lidar'/'radar')。
+
+    規約を満たさない名前には None を返す。
+    """
+    if not is_valid_channel_name(name):
+        return None
+    if name.startswith(CAM_PREFIX):
+        return "camera"
+    if name.startswith(LIDAR_PREFIX):
+        return "lidar"
+    if name.startswith(RADAR_PREFIX):
+        return "radar"
+    return None
+
+
+# --------------------------------------------------------------------------
+# nuScenes 標準チャネル (参考・デフォルト)
+# --------------------------------------------------------------------------
+# これらは nuScenes 準拠の代表的な構成であり、CARLA の当面のデフォルトや
+# platform 定義を書く際の雛形として使う。*上限でも唯一の正でもない* —
+# 実際の構成は platform ごとに自由に定義できる。
+
 CAM_FRONT: Final = "CAM_FRONT"
 CAM_FRONT_LEFT: Final = "CAM_FRONT_LEFT"
 CAM_FRONT_RIGHT: Final = "CAM_FRONT_RIGHT"
@@ -28,7 +83,7 @@ CAM_BACK: Final = "CAM_BACK"
 CAM_BACK_LEFT: Final = "CAM_BACK_LEFT"
 CAM_BACK_RIGHT: Final = "CAM_BACK_RIGHT"
 
-CAMERA_CHANNELS: Final[tuple[str, ...]] = (
+NUSCENES_CAMERA_CHANNELS: Final[tuple[str, ...]] = (
     CAM_FRONT,
     CAM_FRONT_LEFT,
     CAM_FRONT_RIGHT,
@@ -38,13 +93,14 @@ CAMERA_CHANNELS: Final[tuple[str, ...]] = (
 )
 
 LIDAR_TOP: Final = "LIDAR_TOP"
-LIDAR_CHANNELS: Final[tuple[str, ...]] = (LIDAR_TOP,)
+NUSCENES_LIDAR_CHANNELS: Final[tuple[str, ...]] = (LIDAR_TOP,)
 
-# 将来拡張 (nuScenes 準拠名: RADAR_FRONT, RADAR_FRONT_LEFT, ...)
-RADAR_CHANNELS: Final[tuple[str, ...]] = ()
+# nuScenes 準拠の RADAR 標準名 (参考)
+RADAR_FRONT: Final = "RADAR_FRONT"
+NUSCENES_RADAR_CHANNELS: Final[tuple[str, ...]] = (RADAR_FRONT,)
 
-ALL_SENSOR_CHANNELS: Final[tuple[str, ...]] = (
-    CAMERA_CHANNELS + LIDAR_CHANNELS + RADAR_CHANNELS
+NUSCENES_SENSOR_CHANNELS: Final[tuple[str, ...]] = (
+    NUSCENES_CAMERA_CHANNELS + NUSCENES_LIDAR_CHANNELS + NUSCENES_RADAR_CHANNELS
 )
 
 # --------------------------------------------------------------------------

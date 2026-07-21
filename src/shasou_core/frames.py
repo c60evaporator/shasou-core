@@ -24,7 +24,7 @@
   (gt/ego_odom) と trajectory 成果物で表現する。/tf_static のみ記録する。
 """
 
-from .constants import CAMERA_CHANNELS, LIDAR_CHANNELS
+from .constants import channel_modality
 
 FRAME_MAP = "map"
 FRAME_BASE_LINK = "base_link"
@@ -44,24 +44,33 @@ def optical_frame(channel: str) -> str:
 
     カメラ以外のチャネルに対しては ValueError。
     """
-    if channel not in CAMERA_CHANNELS:
+    if channel_modality(channel) != "camera":
         raise ValueError(f"optical frame is defined only for cameras, got {channel!r}")
     return sensor_frame(channel) + OPTICAL_SUFFIX
 
 
 def expected_static_transforms(
-    camera_channels: tuple[str, ...] = CAMERA_CHANNELS,
-    lidar_channels: tuple[str, ...] = LIDAR_CHANNELS,
+    camera_channels: tuple[str, ...],
+    lidar_channels: tuple[str, ...],
+    radar_channels: tuple[str, ...] = (),
+    *,
+    include_imu: bool = True,
+    include_gnss: bool = True,
 ) -> list[tuple[str, str]]:
     """/tf_static に存在すべき (parent, child) ペアの一覧を返す。
 
-    recorder の起動時検証と studio の取り込み時検証が同じ定義を参照する。
+    チャネル集合は platform 定義 (sensor_rig) から渡す。core は固定の台数構成を
+    持たないため、呼び出し側が実際の構成を与える。recorder の起動時検証と
+    studio の取り込み時検証が、同じ platform 由来の集合でこの関数を使う。
     """
-    pairs: list[tuple[str, str]] = [
-        (FRAME_BASE_LINK, FRAME_IMU),
-        (FRAME_BASE_LINK, FRAME_GNSS),
-    ]
+    pairs: list[tuple[str, str]] = []
+    if include_imu:
+        pairs.append((FRAME_BASE_LINK, FRAME_IMU))
+    if include_gnss:
+        pairs.append((FRAME_BASE_LINK, FRAME_GNSS))
     for ch in lidar_channels:
+        pairs.append((FRAME_BASE_LINK, sensor_frame(ch)))
+    for ch in radar_channels:
         pairs.append((FRAME_BASE_LINK, sensor_frame(ch)))
     for ch in camera_channels:
         pairs.append((FRAME_BASE_LINK, sensor_frame(ch)))

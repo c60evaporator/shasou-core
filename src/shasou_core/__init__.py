@@ -39,4 +39,27 @@ __all__ = [
     "ns_to_seconds",
     "ns_to_us",
     "seconds_to_ns",
+    "DriveManifest",
+    "DriveStatus",
+    "ArchiveStatus",
+    "EgoPoseBackend",
+    "TrajectoryMetadata",
+    "TrajectoryPoint",
+    "Datum",
+    "PoseQuality",
+    "TRAJECTORY_COLUMNS",
 ]
+
+from .schemas.common import EgoPoseBackend  # noqa: E402
+from .schemas.manifest import (  # noqa: E402
+    ArchiveStatus,
+    DriveManifest,
+    DriveStatus,
+)
+from .schemas.trajectory import (  # noqa: E402
+    TRAJECTORY_COLUMNS,
+    Datum,
+    PoseQuality,
+    TrajectoryMetadata,
+    TrajectoryPoint,
+)

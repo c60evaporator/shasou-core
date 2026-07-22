@@ -20,6 +20,7 @@ from shasou_core.schemas.platform import (
     ChannelSpec,
     Platform,
 )
+from shasou_core.schemas.vehicle import Vehicle
 from shasou_core.validation import (
     Severity,
     validate_calibration_against_platform,
@@ -27,6 +28,7 @@ from shasou_core.validation import (
     validate_drive,
     validate_manifest_against_platform,
     validate_observed_topics,
+    validate_vehicle_consistency,
 )
 
 
@@ -152,9 +154,11 @@ class TestManifestVsPlatform:
 
 
 class TestCalibrationCoverage:
-    def _calib(self, channels=("CAM_FRONT", "LIDAR_TOP"), calib_id="calib_v001"):
+    def _calib(self, channels=("CAM_FRONT", "LIDAR_TOP"), calib_id="calib_v001",
+               vehicle="v01"):
         return CalibrationSet(
             calib_id=calib_id,
+            vehicle=vehicle,
             captured_at="2026-07-01",
             entries=[_calib_entry(c) for c in channels],
         )
@@ -173,6 +177,13 @@ class TestCalibrationCoverage:
         r = validate_calibration_coverage(
             _manifest(), _platform(), self._calib(calib_id="other"))
         assert any(i.code == "calib_id_mismatch" for i in r.errors())
+
+    def test_calibration_vehicle_mismatch_error(self):
+        # 他車両のキャリブを誤って参照した -> ERROR (個体固有の値を流用不可)
+        r = validate_calibration_coverage(
+            _manifest(vehicle="v01"), _platform(), self._calib(vehicle="v99"))
+        assert not r.ok
+        assert "calibration_vehicle_mismatch" in _codes(r, Severity.ERROR)
 
 
 class TestObservedTopics:
@@ -278,7 +289,7 @@ class TestCalibrationVsPlatform:
 
     def _calib(self):
         return CalibrationSet(
-            calib_id="calib_v001", captured_at="2026-07-01",
+            calib_id="calib_v001", vehicle="v01", captured_at="2026-07-01",
             entries=[_calib_entry(c) for c in ("CAM_FRONT", "LIDAR_TOP")])
 
     def test_matching_declaration_ok(self):
@@ -313,14 +324,39 @@ class TestCalibrationVsPlatform:
         assert not r.issues
 
 
+class TestVehicleConsistency:
+    def _vehicle(self, **overrides):
+        data = dict(vehicle_id="v01", platform_id="platform_test")
+        data.update(overrides)
+        return Vehicle(**data)
+
+    def test_matching_ok(self):
+        r = validate_vehicle_consistency(_manifest(), self._vehicle())
+        assert r.ok
+        assert not r.issues
+
+    def test_platform_mismatch_is_error(self):
+        r = validate_vehicle_consistency(
+            _manifest(), self._vehicle(platform_id="other_platform"))
+        assert not r.ok
+        assert "vehicle_platform_mismatch" in _codes(r, Severity.ERROR)
+
+    def test_vehicle_id_mismatch_is_error(self):
+        r = validate_vehicle_consistency(
+            _manifest(vehicle="v01"), self._vehicle(vehicle_id="v99"))
+        assert not r.ok
+        assert "vehicle_id_mismatch" in _codes(r, Severity.ERROR)
+
+
 class TestValidateDrive:
     def test_combined_ok(self):
         calib = CalibrationSet(
-            calib_id="calib_v001", captured_at="2026-07-01",
+            calib_id="calib_v001", vehicle="v01", captured_at="2026-07-01",
             entries=[_calib_entry(c) for c in ("CAM_FRONT", "LIDAR_TOP")])
         r = validate_drive(
             _manifest(), _platform(), calibration=calib,
-            observed_topic_names=_observed())
+            observed_topic_names=_observed(),
+            vehicle=Vehicle(vehicle_id="v01", platform_id="platform_test"))
         assert r.ok
 
     def test_partial_acceptance_shape(self):

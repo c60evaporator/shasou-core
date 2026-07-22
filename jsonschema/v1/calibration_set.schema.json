@@ -178,7 +178,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "1 回のキャリブレーション (calib_id で識別)。複数センサを含む。",
+  "description": "1 回のキャリブレーション (calib_id で識別)。複数センサを含む。\n\nキャリブ値は車両個体固有 (取り付け位置・レンズ個体差)。フリート運用では\n同一 platform でも個体ごとにキャリブが異なるため、どの車両のキャリブか\n不明な状態を作らないよう vehicle を必須にする。同一 platform の別車両へ\n流用してはならない。",
   "properties": {
     "calib_id": {
       "title": "Calib Id",
@@ -196,10 +196,16 @@
       },
       "title": "Entries",
       "type": "array"
+    },
+    "vehicle": {
+      "description": "このキャリブが属する車両個体の ID (Vehicle.vehicle_id)",
+      "title": "Vehicle",
+      "type": "string"
     }
   },
   "required": [
     "calib_id",
+    "vehicle",
     "captured_at",
     "entries"
   ],

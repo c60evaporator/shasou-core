@@ -1,13 +1,18 @@
 """platform 定義スキーマ。
 
-platform は「学習データとして一体利用できる」単位で、センサ構成 (sensor_rig)
-と車種 (vehicle_type) が一致するデータをグルーピングする。studio が編集元
-(source of truth) で、recorder は同期して使う。
+platform は「同一のセンサ構成 (sensor_rig) と車種 (vehicle_type) で収録された
+ドライブ群」をグルーピングする単位。studio が編集元 (source of truth) で、
+recorder は同期して使う。同一 platform に複数の車両個体 (Vehicle) が属しうる
+(フリート運用)。学習データセットの構成 (複数 platform を混ぜて学習に使うか) は
+studio の責務であり core は関与しない。
 
 calibration.py との責務分担: ChannelSpec は *構成上の宣言* (設計値・公称値。
 期待する内部パラメータモデルの型参照や設計搭載位置) を持ち、実測の歪み係数・
 実測搭載位置はキャリブレーション 1 回ごとの calibration.py 側が持つ。
 宣言と実測の整合照合は validation.py の責務。
+
+車両個体の物理パラメータ・CAN 仕様は vehicle.py (VehicleType / Vehicle) の責務。
+platform は車種を vehicle_type (VehicleType への参照 ID) で指すだけ。
 """
 
 from __future__ import annotations
@@ -19,30 +24,7 @@ from typing import Optional
 from pydantic import Field, field_validator, model_validator
 
 from ..constants import channel_modality, is_valid_channel_name
-from .common import Modality, Pose, ShasouModel, Vector3
-
-# --------------------------------------------------------------------------
-# 車両固有パラメータの語彙
-# --------------------------------------------------------------------------
-
-
-class SpeedSignRule(str, Enum):
-    """ソース (CAN / CARLA) の速度値の符号規則。
-
-    shasou の契約は「m/s・後退で負」(constants.py)。ソースがこの契約と
-    異なる場合にアダプタがどう変換すべきかを宣言する。
-    """
-
-    SIGNED = "signed"  # ソース速度が符号付き (後退で負)。そのまま使える
-    ABS_WITH_REVERSE_FLAG = "abs_with_reverse_flag"  # 速度は常に非負。reverse フラグで符号を付与
-
-
-class BrakeNormalization(str, Enum):
-    """pedals トピックの brake=1.0 が何を意味するか。"""
-
-    STROKE = "stroke"  # 最大ペダルストロークを 1.0 とする
-    PRESSURE = "pressure"  # 最大ブレーキ液圧を 1.0 とする
-    SWITCH = "switch"  # ブレーキスイッチ。0/1 の二値のみ
+from .common import Modality, Pose, ShasouModel
 
 
 class CameraIntrinsicsModel(str, Enum):
@@ -114,55 +96,20 @@ class ChannelSpec(ShasouModel):
         return self
 
 
-# --------------------------------------------------------------------------
-# 車両固有パラメータ
-# --------------------------------------------------------------------------
+class Platform(ShasouModel):
+    """platform 定義。sensor_rig (チャネル集合) + vehicle_type。
 
-
-class VehicleParams(ShasouModel):
-    """車両固有パラメータ。CARLA ブリッジ / CAN デコーダのアダプタが変換に使う。
-
-    Platform にネストされる区画であり、単独で配布されることはない。車種の
-    識別は Platform.vehicle_type が唯一の正 (ここには持たない)。
-
-    platform 定義は手書きされうるため、すべて optional。値が無いパラメータを
-    必要とするアダプタは、その時点でエラーにする。
+    同一 platform に複数の車両個体 (Vehicle) が属しうる。車種の物理パラメータ
+    と CAN 仕様は vehicle.py の VehicleType / Vehicle が持ち、platform は
+    vehicle_type で車種を参照するだけ。
     """
 
-    steering_gear_ratio: Optional[float] = Field(
-        default=None, gt=0,
-        description="ハンドル角→前輪実舵角の変換比 (実舵角 = ハンドル角 / ratio)。"
-        "角度は rad・左転舵正",
-    )
-    max_steer_angle_rad: Optional[float] = Field(
-        default=None, gt=0, le=math.pi,
-        description="最大前輪実舵角 [rad]。CARLA 正規化 steer [-1,1] → rad 変換用",
-    )
-    speed_sign_rule: Optional[SpeedSignRule] = Field(
-        default=None,
-        description="ソース速度の符号規則。契約 (m/s・後退負) への変換方法",
-    )
-    brake_normalization: Optional[BrakeNormalization] = Field(
-        default=None,
-        description="pedals トピックの brake=1.0 の定義",
-    )
-    base_link_offset: Optional[Vector3] = Field(
-        default=None,
-        description="車両モデル原点→後軸中心のオフセット [m]。右手系",
-    )
-
-
-class Platform(ShasouModel):
-    """platform 定義。sensor_rig (チャネル集合) + vehicle_type。"""
-
     platform_id: str = Field(description="platform ID (フォルダ名と一致)")
-    vehicle_type: str
+    vehicle_type: str = Field(
+        description="VehicleType への参照 ID (vehicle.py の VehicleType.vehicle_type_id)",
+    )
     sensor_rig: list[ChannelSpec] = Field(
         description="この platform のセンサ構成。実チャネル集合の正",
-    )
-    vehicle_params: Optional[VehicleParams] = Field(
-        default=None,
-        description="車両固有パラメータ。アダプタが変換に使う",
     )
 
     def channel_names(self) -> set[str]:

@@ -26,35 +26,45 @@ shasouエコシステムは、以下3リポジトリから構成される
 
 ```mermaid
 erDiagram
-    platform ||--o{ drive : ""
-    platform ||--o{ calibration : ""
-    calibration ||--|{ calibration_sensor_entry : "含む"
-
+    vehicle_type ||--o{ platform : ""
+    platform ||--o{ vehicle : ""
+    vehicle ||--o{ calibration : ""
+    vehicle ||--o{ drive : ""
+    calibration ||--|{ drive : ""
+    
+    vehicle_type {
+        string platform_id
+    }
     platform {
         string platform_id
+        string vehicle_type_id
         string sensor_rig
-        string vehicle_type
+    }
+    vehicle {
+        string vehicle_id
+        string platform_id
+        string speed_sign_rule
+        string brake_normalization
+    }
+    calibration {
+        string calib_id
+        string vehicle_id
+        date captured_at
     }
     drive {
         string drive_id
+        string vehicle_id
         string calib_id
         string status
         string archive_status
     }
-    calibration {
-        string calib_id
-        date captured_at
-    }
-    calibration_sensor_entry {
-        string channel
-        json intrinsics
-        json extrinsics
-    }
 ```
 
-- platform: 「学習データとして一体利用できる」ことを念頭に、センサ構成（sensor_rig）・車種（vehicle_type）が一致するデータをグルーピングしたもの。shasou-studioで定義を作成・管理し。recorderは同期時に取得（studio非依存のローカル定義でも動作可）
-- drive: 1走行ごとに取得され、IDとしてdrive_idが割り当てられる。1つのdriveがnuScenes形式変換後のlogと1対1で対応。shasou-recorderが走行ごとに自動作成する
+- vehicle_type: 車種を表す。同一vehicle_typeでCAN仕様が異なっていても良い（speed_sign_rule等のCAN仕様はvehicleごとに指定する）。shasou-studioで定義を作成・管理し。recorderは同期時にvehicleから紐付けて取得（studio非依存のローカル定義でも動作可）
+- platform: センサ構成（sensor_rig）・車種（vehicle_type）が一致するデータをグルーピングしたもの。shasou-studioで定義を作成・管理し。recorderは同期時にvehicleから紐付けて取得（studio非依存のローカル定義でも動作可）
+- vehicle: 車種を表す。同一vehicle_typeでCAN仕様が異なっていても良い（CAN仕様はvehicleごとに指定する）。shasou-studioで登録・管理し。recorder同期時のキーとして作用する（studio非依存のローカル定義でも動作可）
 - calibration: キャリブレーション1回ごとに作成される（複数センサを含む）。1回のcalibrationはnuScenes形式変換時に複数センサ分のcalibrated_sensorレコードに展開される。shasou-recorderがキャリブレーションごとに自動作成する
+- drive: 1走行ごとに取得され、IDとしてdrive_idが割り当てられる。1つのdriveがnuScenes形式変換後のlogと1対1で対応。shasou-recorderが走行ごとに自動作成する
 
 #### データ収集のワークフロー
 データ収集は以下の流れで実施

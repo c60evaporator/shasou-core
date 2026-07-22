@@ -11,6 +11,7 @@
 3. manifest.platform が Platform.platform_id と一致するか
 4. (bag 検証用) 実トピック集合が source 別トピック契約を満たすか
 5. platform の構成宣言 (ChannelSpec) と calibration の実測値が整合するか
+6. manifest が指す車両個体 (Vehicle) と所属 platform・ID が整合するか
 
 設計方針
 --------
@@ -28,6 +29,7 @@ from .constants import channel_modality
 from .schemas.calibration import CalibrationSet
 from .schemas.manifest import DriveManifest
 from .schemas.platform import Platform
+from .schemas.vehicle import Vehicle
 from .schemas.topics import (
     ALL_CONTRACTS,
     TopicContract,
@@ -128,6 +130,7 @@ def validate_calibration_coverage(
     """calib_id が指す CalibrationSet が platform の全センサを網羅するか。
 
     - calib_id 不一致 -> ERROR
+    - vehicle 不一致 -> ERROR (他車両のキャリブ誤用。キャリブ値は個体固有)
     - platform の sensor_rig にあって calibration に無いチャネル -> ERROR
       (キャリブ欠落。nuScenes 変換時に calibrated_sensor を作れない)
     - calibration にあって sensor_rig に無いチャネル -> WARNING
@@ -139,6 +142,16 @@ def validate_calibration_coverage(
             Severity.ERROR, "calib_id_mismatch",
             f"manifest.calib_id ({manifest.calib_id}) != "
             f"calibration.calib_id ({calibration.calib_id})",
+        )
+
+    if manifest.vehicle != calibration.vehicle:
+        result.add(
+            Severity.ERROR, "calibration_vehicle_mismatch",
+            f"manifest.vehicle ({manifest.vehicle}) != "
+            f"calibration.vehicle ({calibration.vehicle})。"
+            "キャリブ値は車両個体固有で、他車両へ流用してはならない",
+            manifest_vehicle=manifest.vehicle,
+            calibration_vehicle=calibration.vehicle,
         )
 
     rig_channels = platform.channel_names()
@@ -343,6 +356,47 @@ def validate_calibration_against_platform(
 
 
 # --------------------------------------------------------------------------
+# 5. manifest x vehicle: 車両個体の整合
+# --------------------------------------------------------------------------
+
+
+def validate_vehicle_consistency(
+    manifest: DriveManifest, vehicle: Vehicle
+) -> ValidationResult:
+    """manifest が指す車両個体と Vehicle 定義が整合するか。
+
+    - vehicle.platform_id != manifest.platform -> ERROR
+      (別 platform の車両個体を指している。センサ構成が食い違う)
+    - vehicle.vehicle_id != manifest.vehicle -> ERROR
+      (manifest が別の車両個体を指している)
+
+    manifest.platform が Platform.platform_id と一致するかは
+    validate_manifest_against_platform が担うため、ここでは vehicle 側との
+    突き合わせに徹する (manifest 基準)。
+    """
+    result = ValidationResult()
+
+    if vehicle.platform_id != manifest.platform:
+        result.add(
+            Severity.ERROR, "vehicle_platform_mismatch",
+            f"vehicle.platform_id ({vehicle.platform_id}) != "
+            f"manifest.platform ({manifest.platform})",
+            vehicle_platform_id=vehicle.platform_id,
+            manifest_platform=manifest.platform,
+        )
+
+    if vehicle.vehicle_id != manifest.vehicle:
+        result.add(
+            Severity.ERROR, "vehicle_id_mismatch",
+            f"vehicle.vehicle_id ({vehicle.vehicle_id}) != "
+            f"manifest.vehicle ({manifest.vehicle})",
+            vehicle_id=vehicle.vehicle_id,
+            manifest_vehicle=manifest.vehicle,
+        )
+    return result
+
+
+# --------------------------------------------------------------------------
 # 統合エントリポイント
 # --------------------------------------------------------------------------
 
@@ -352,12 +406,13 @@ def validate_drive(
     platform: Platform,
     calibration: CalibrationSet | None = None,
     observed_topic_names: set[str] | None = None,
+    vehicle: Vehicle | None = None,
 ) -> ValidationResult:
     """1 ドライブの取り込み前検証をまとめて実行する。
 
-    studio の取り込み時に呼ぶ想定。calibration / observed_topic_names が
-    与えられれば該当検証も回す。ok が False (ERROR あり) なら取り込みを保留し、
-    issues を記録する (以前議論した部分受理はこの結果を見て呼び出し側が判断)。
+    studio の取り込み時に呼ぶ想定。calibration / observed_topic_names /
+    vehicle が与えられれば該当検証も回す。ok が False (ERROR あり) なら取り込みを
+    保留し、issues を記録する (以前議論した部分受理はこの結果を見て呼び出し側が判断)。
     """
     result = validate_manifest_against_platform(manifest, platform)
     if calibration is not None:
@@ -365,4 +420,6 @@ def validate_drive(
         result.merge(validate_calibration_against_platform(platform, calibration))
     if observed_topic_names is not None:
         result.merge(validate_observed_topics(manifest, observed_topic_names))
+    if vehicle is not None:
+        result.merge(validate_vehicle_consistency(manifest, vehicle))
     return result

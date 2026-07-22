@@ -1,15 +1,5 @@
 {
   "$defs": {
-    "BrakeNormalization": {
-      "description": "pedals トピックの brake=1.0 が何を意味するか。",
-      "enum": [
-        "stroke",
-        "pressure",
-        "switch"
-      ],
-      "title": "BrakeNormalization",
-      "type": "string"
-    },
     "CameraConfig": {
       "additionalProperties": false,
       "description": "カメラの構成情報 (modality=camera のチャネルのみ)。すべて公称値。",
@@ -186,15 +176,6 @@
       "title": "QuaternionXYZW",
       "type": "object"
     },
-    "SpeedSignRule": {
-      "description": "ソース (CAN / CARLA) の速度値の符号規則。\n\nshasou の契約は「m/s・後退で負」(constants.py)。ソースがこの契約と\n異なる場合にアダプタがどう変換すべきかを宣言する。",
-      "enum": [
-        "signed",
-        "abs_with_reverse_flag"
-      ],
-      "title": "SpeedSignRule",
-      "type": "string"
-    },
     "Vector3": {
       "additionalProperties": false,
       "properties": {
@@ -218,83 +199,10 @@
       ],
       "title": "Vector3",
       "type": "object"
-    },
-    "VehicleParams": {
-      "additionalProperties": false,
-      "description": "車両固有パラメータ。CARLA ブリッジ / CAN デコーダのアダプタが変換に使う。\n\nPlatform にネストされる区画であり、単独で配布されることはない。車種の\n識別は Platform.vehicle_type が唯一の正 (ここには持たない)。\n\nplatform 定義は手書きされうるため、すべて optional。値が無いパラメータを\n必要とするアダプタは、その時点でエラーにする。",
-      "properties": {
-        "base_link_offset": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Vector3"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "車両モデル原点→後軸中心のオフセット [m]。右手系"
-        },
-        "brake_normalization": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BrakeNormalization"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "pedals トピックの brake=1.0 の定義"
-        },
-        "max_steer_angle_rad": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "maximum": 3.141592653589793,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "最大前輪実舵角 [rad]。CARLA 正規化 steer [-1,1] → rad 変換用",
-          "title": "Max Steer Angle Rad"
-        },
-        "speed_sign_rule": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SpeedSignRule"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "ソース速度の符号規則。契約 (m/s・後退負) への変換方法"
-        },
-        "steering_gear_ratio": {
-          "anyOf": [
-            {
-              "exclusiveMinimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "ハンドル角→前輪実舵角の変換比 (実舵角 = ハンドル角 / ratio)。角度は rad・左転舵正",
-          "title": "Steering Gear Ratio"
-        }
-      },
-      "title": "VehicleParams",
-      "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "platform 定義。sensor_rig (チャネル集合) + vehicle_type。",
+  "description": "platform 定義。sensor_rig (チャネル集合) + vehicle_type。\n\n同一 platform に複数の車両個体 (Vehicle) が属しうる。車種の物理パラメータ\nと CAN 仕様は vehicle.py の VehicleType / Vehicle が持ち、platform は\nvehicle_type で車種を参照するだけ。",
   "properties": {
     "platform_id": {
       "description": "platform ID (フォルダ名と一致)",
@@ -309,19 +217,8 @@
       "title": "Sensor Rig",
       "type": "array"
     },
-    "vehicle_params": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/VehicleParams"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "車両固有パラメータ。アダプタが変換に使う"
-    },
     "vehicle_type": {
+      "description": "VehicleType への参照 ID (vehicle.py の VehicleType.vehicle_type_id)",
       "title": "Vehicle Type",
       "type": "string"
     }

@@ -55,6 +55,7 @@ def _lidar_entry():
 def _calibration_set(**overrides):
     data = dict(
         calib_id="calib_v003_2026-07-01",
+        vehicle="v01",
         captured_at="2026-07-01",
         entries=[_camera_entry(), _lidar_entry()],
     )
@@ -151,6 +152,17 @@ class TestSensorCalibEntry:
 
 
 class TestCalibrationSet:
+    def test_vehicle_required(self):
+        # キャリブ値は個体固有。どの車両か不明な状態を作らない
+        with pytest.raises(ValidationError):
+            CalibrationSet(
+                calib_id="calib_v003", captured_at="2026-07-01",
+                entries=[_camera_entry(), _lidar_entry()])
+
+    def test_vehicle_recorded(self):
+        c = _calibration_set(vehicle="v07")
+        assert c.vehicle == "v07"
+
     def test_token_deterministic(self):
         c = _calibration_set()
         t1 = c.calibrated_sensor_token("CAM_FRONT")

@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "BrakeNormalization": {
+      "description": "pedals トピックの brake=1.0 が何を意味するか。",
+      "enum": [
+        "stroke",
+        "pressure",
+        "switch"
+      ],
+      "title": "BrakeNormalization",
+      "type": "string"
+    },
+    "CanSpec": {
+      "additionalProperties": false,
+      "description": "CAN 由来の車両状態トピックの解釈規約。\n\n車種デフォルト (VehicleType.can_defaults) と個体上書き (Vehicle.can_overrides)\nの両方で使う。どちらも手書きされうるため各フィールドは optional。実効値の\n合成は overlay() が担う。",
+      "properties": {
+        "brake_normalization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BrakeNormalization"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "pedals トピックの brake=1.0 の定義"
+        },
+        "speed_sign_rule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpeedSignRule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ソース速度の符号規則。契約 (m/s・後退負) への変換方法"
+        }
+      },
+      "title": "CanSpec",
+      "type": "object"
+    },
+    "SpeedSignRule": {
+      "description": "ソース (CAN / CARLA) の速度値の符号規則。\n\nshasou の契約は「m/s・後退で負」(constants.py)。ソースがこの契約と\n異なる場合にアダプタがどう変換すべきかを宣言する。",
+      "enum": [
+        "signed",
+        "abs_with_reverse_flag"
+      ],
+      "title": "SpeedSignRule",
+      "type": "string"
+    },
+    "Vector3": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "title": "Vector3",
+      "type": "object"
+    },
+    "VehicleDimensions": {
+      "additionalProperties": false,
+      "description": "車両の外形寸法 [m]。混合学習時に車格の近さを判断する材料。\n\nブロックを宣言する場合は 3 値そろえる (部分的な寸法宣言は意味を持たない)。\nブロック自体は VehicleType 側で optional。",
+      "properties": {
+        "height_m": {
+          "description": "全高 [m]",
+          "exclusiveMinimum": 0,
+          "title": "Height M",
+          "type": "number"
+        },
+        "length_m": {
+          "description": "全長 [m]",
+          "exclusiveMinimum": 0,
+          "title": "Length M",
+          "type": "number"
+        },
+        "width_m": {
+          "description": "全幅 [m]",
+          "exclusiveMinimum": 0,
+          "title": "Width M",
+          "type": "number"
+        }
+      },
+      "required": [
+        "length_m",
+        "width_m",
+        "height_m"
+      ],
+      "title": "VehicleDimensions",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "車種の公称物理パラメータ。studio が編集元。\n\nplatform 定義同様に手書きされうるため、識別子以外はすべて optional。\n値が無いパラメータを必要とするアダプタは、その時点でエラーにする。",
+  "properties": {
+    "base_link_offset": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Vector3"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "車両モデル原点→後軸中心のオフセット [m]。右手系"
+    },
+    "can_defaults": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CanSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "車種としての CAN 仕様デフォルト。個体が上書きしうる"
+    },
+    "dimensions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VehicleDimensions"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "外形寸法。混合学習時の車格判断材料"
+    },
+    "max_steer_angle_rad": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "maximum": 3.141592653589793,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "最大前輪実舵角 [rad]。CARLA 正規化 steer [-1,1] → rad 変換用",
+      "title": "Max Steer Angle Rad"
+    },
+    "steering_gear_ratio": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ハンドル角→前輪実舵角の変換比 (実舵角 = ハンドル角 / ratio)。角度は rad・左転舵正",
+      "title": "Steering Gear Ratio"
+    },
+    "vehicle_type_id": {
+      "description": "車種の識別子 (例 'lincoln_mkz')",
+      "title": "Vehicle Type Id",
+      "type": "string"
+    },
+    "wheelbase_m": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ホイールベース [m]。運動学計算と混合学習の判断材料",
+      "title": "Wheelbase M"
+    }
+  },
+  "required": [
+    "vehicle_type_id"
+  ],
+  "title": "VehicleType",
+  "type": "object"
+}

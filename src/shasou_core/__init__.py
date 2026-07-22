@@ -54,6 +54,12 @@ __all__ = [
     "TopicStat",
     "TopicStats",
     "DiskStats",
+    "CanSpec",
+    "SpeedSignRule",
+    "BrakeNormalization",
+    "VehicleDimensions",
+    "VehicleType",
+    "Vehicle",
 ]
 
 from .schemas.common import EgoPoseBackend  # noqa: E402
@@ -78,4 +84,12 @@ from .schemas.trajectory import (  # noqa: E402
     PoseQuality,
     TrajectoryMetadata,
     TrajectoryPoint,
+)
+from .schemas.vehicle import (  # noqa: E402
+    BrakeNormalization,
+    CanSpec,
+    SpeedSignRule,
+    Vehicle,
+    VehicleDimensions,
+    VehicleType,
 )

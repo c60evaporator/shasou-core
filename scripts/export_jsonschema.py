@@ -32,6 +32,7 @@ from shasou_core.schemas.health import TopicStats
 from shasou_core.schemas.manifest import DriveManifest
 from shasou_core.schemas.platform import Platform
 from shasou_core.schemas.trajectory import TrajectoryMetadata
+from shasou_core.schemas.vehicle import Vehicle, VehicleType
 
 # JSON Schema ディレクトリの世代番号。SemVer の MAJOR とは別概念なので連動させない
 # (0.x は「初期開発中」を表すだけで、契約の世代は v1)。
@@ -42,6 +43,8 @@ SCHEMA_DIR = "v1"
 EXPORTS: tuple[tuple[Type[BaseModel], str], ...] = (
     (DriveManifest, "drive_manifest.schema.json"),
     (Platform, "platform.schema.json"),
+    (VehicleType, "vehicle_type.schema.json"),
+    (Vehicle, "vehicle.schema.json"),
     (CalibrationSet, "calibration_set.schema.json"),
     (TrajectoryMetadata, "trajectory_metadata.schema.json"),
     (EventTag, "event_tag.schema.json"),

@@ -27,6 +27,8 @@ _REGENERATE = "`python scripts/export_jsonschema.py` で再生成してくださ
 EXPECTED_FILENAMES = {
     "drive_manifest.schema.json",
     "platform.schema.json",
+    "vehicle_type.schema.json",
+    "vehicle.schema.json",
     "calibration_set.schema.json",
     "trajectory_metadata.schema.json",
     "event_tag.schema.json",

@@ -5,26 +5,11 @@ from pydantic import ValidationError
 
 from shasou_core.schemas.common import Modality, Pose, QuaternionXYZW, Vector3
 from shasou_core.schemas.platform import (
-    BrakeNormalization,
     CameraConfig,
     CameraIntrinsicsModel,
     ChannelSpec,
     Platform,
-    SpeedSignRule,
-    VehicleParams,
 )
-
-
-def _full_vehicle_params(**overrides):
-    data = dict(
-        steering_gear_ratio=15.7,
-        max_steer_angle_rad=0.61,
-        speed_sign_rule=SpeedSignRule.ABS_WITH_REVERSE_FLAG,
-        brake_normalization=BrakeNormalization.STROKE,
-        base_link_offset=Vector3(x=-1.37, y=0.0, z=-0.32),
-    )
-    data.update(overrides)
-    return data
 
 
 def _camera_spec(**overrides):
@@ -44,47 +29,6 @@ def _camera_spec(**overrides):
     )
     data.update(overrides)
     return data
-
-
-class TestVehicleParams:
-    def test_minimal(self):
-        # 手書き platform 定義を想定し、すべて optional
-        p = VehicleParams()
-        assert p.steering_gear_ratio is None
-        assert p.base_link_offset is None
-
-    def test_full(self):
-        p = VehicleParams(**_full_vehicle_params())
-        assert p.max_steer_angle_rad == pytest.approx(0.61)
-        assert p.base_link_offset.x == pytest.approx(-1.37)
-
-    def test_nonpositive_ratio_rejected(self):
-        with pytest.raises(ValidationError):
-            VehicleParams(**_full_vehicle_params(steering_gear_ratio=0.0))
-        with pytest.raises(ValidationError):
-            VehicleParams(**_full_vehicle_params(steering_gear_ratio=-15.7))
-
-    def test_steer_angle_bounds(self):
-        with pytest.raises(ValidationError):
-            VehicleParams(**_full_vehicle_params(max_steer_angle_rad=0.0))
-        with pytest.raises(ValidationError):
-            VehicleParams(**_full_vehicle_params(max_steer_angle_rad=math.pi + 0.1))
-
-    def test_enums_from_string(self):
-        # JSON/YAML からは文字列値で入る
-        p = VehicleParams(
-            speed_sign_rule="signed",
-            brake_normalization="pressure",
-        )
-        assert p.speed_sign_rule == SpeedSignRule.SIGNED
-        assert p.brake_normalization == BrakeNormalization.PRESSURE
-
-    def test_unknown_field_rejected(self):
-        with pytest.raises(ValidationError):
-            VehicleParams(wheelbase_m=2.85)
-        # vehicle_type は Platform 側が唯一の正。旧二重管理フィールドは弾く
-        with pytest.raises(ValidationError):
-            VehicleParams(vehicle_type="lincoln_mkz")
 
 
 class TestChannelSpec:
@@ -137,7 +81,6 @@ def _platform(**overrides):
             ChannelSpec(**_camera_spec()),
             ChannelSpec(channel="LIDAR_TOP", modality=Modality.LIDAR),
         ],
-        vehicle_params=VehicleParams(**_full_vehicle_params()),
     )
     data.update(overrides)
     return data
@@ -149,9 +92,10 @@ class TestPlatform:
         assert p.channel_names() == {"CAM_FRONT", "LIDAR_TOP"}
         assert p.channels_by_modality(Modality.CAMERA) == ["CAM_FRONT"]
 
-    def test_vehicle_params_optional(self):
-        p = Platform(**_platform(vehicle_params=None))
-        assert p.vehicle_params is None
+    def test_vehicle_params_field_removed(self):
+        # 車両パラメータは vehicle.py へ移設済み。旧フィールドは extra=forbid で弾く
+        with pytest.raises(ValidationError):
+            Platform(**_platform(vehicle_params={"steering_gear_ratio": 15.7}))
 
     def test_modality_mismatch_rejected(self):
         # 既存 _modality_matches_name の回帰: 名前と modality の矛盾を弾く

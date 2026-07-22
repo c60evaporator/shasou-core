@@ -12,7 +12,7 @@ DriveManifest は自身が書かれた時点の SCHEMA_VERSION を記録し、
 読み手 (studio) は MAJOR 一致を要求する。
 """
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"
 
 
 def major(version: str = SCHEMA_VERSION) -> int:

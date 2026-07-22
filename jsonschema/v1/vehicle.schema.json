@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "BrakeNormalization": {
+      "description": "pedals トピックの brake=1.0 が何を意味するか。",
+      "enum": [
+        "stroke",
+        "pressure",
+        "switch"
+      ],
+      "title": "BrakeNormalization",
+      "type": "string"
+    },
+    "CanSpec": {
+      "additionalProperties": false,
+      "description": "CAN 由来の車両状態トピックの解釈規約。\n\n車種デフォルト (VehicleType.can_defaults) と個体上書き (Vehicle.can_overrides)\nの両方で使う。どちらも手書きされうるため各フィールドは optional。実効値の\n合成は overlay() が担う。",
+      "properties": {
+        "brake_normalization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BrakeNormalization"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "pedals トピックの brake=1.0 の定義"
+        },
+        "speed_sign_rule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpeedSignRule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ソース速度の符号規則。契約 (m/s・後退負) への変換方法"
+        }
+      },
+      "title": "CanSpec",
+      "type": "object"
+    },
+    "SpeedSignRule": {
+      "description": "ソース (CAN / CARLA) の速度値の符号規則。\n\nshasou の契約は「m/s・後退で負」(constants.py)。ソースがこの契約と\n異なる場合にアダプタがどう変換すべきかを宣言する。",
+      "enum": [
+        "signed",
+        "abs_with_reverse_flag"
+      ],
+      "title": "SpeedSignRule",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "車両個体。core は最小限に留め、運用管理情報は studio の責務。\n\n車種は所属 platform 経由で解決する (Vehicle → Platform.vehicle_type →\nVehicleType)。個体固有なのは所属 platform と CAN 仕様の個体差のみ。",
+  "properties": {
+    "can_overrides": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CanSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "車種デフォルトへのフィールド単位の上書き。None の項目は 車種デフォルトにフォールバックする"
+    },
+    "platform_id": {
+      "description": "所属 platform の ID",
+      "title": "Platform Id",
+      "type": "string"
+    },
+    "vehicle_id": {
+      "description": "車両個体の識別子",
+      "title": "Vehicle Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "vehicle_id",
+    "platform_id"
+  ],
+  "title": "Vehicle",
+  "type": "object"
+}

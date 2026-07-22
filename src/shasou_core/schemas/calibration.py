@@ -116,9 +116,16 @@ class SensorCalibEntry(ShasouModel):
 
 
 class CalibrationSet(ShasouModel):
-    """1 回のキャリブレーション (calib_id で識別)。複数センサを含む。"""
+    """1 回のキャリブレーション (calib_id で識別)。複数センサを含む。
+
+    キャリブ値は車両個体固有 (取り付け位置・レンズ個体差)。フリート運用では
+    同一 platform でも個体ごとにキャリブが異なるため、どの車両のキャリブか
+    不明な状態を作らないよう vehicle を必須にする。同一 platform の別車両へ
+    流用してはならない。
+    """
 
     calib_id: str
+    vehicle: str = Field(description="このキャリブが属する車両個体の ID (Vehicle.vehicle_id)")
     captured_at: date
     entries: list[SensorCalibEntry] = Field(
         description="各センサのキャリブ。1 エントリ = 1 calibrated_sensor",

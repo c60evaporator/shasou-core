@@ -21,14 +21,22 @@ data/
 |   │       ├── health/
 |   │       │   └── topic_stats.json   # Hz・ドロップ率・ディスクログ
 |   │       └── notes.md               # 同乗者の自由記述（任意）
-|   └── calibrations/
-|       ├── calib_v003_2026-07-01/ # キャリブレーション実施ごとに1フォルダ
-|       │   ├── intrinsics/        # カメラ内部パラメータ
-|       │   ├── extrinsics/        # センサ間外部パラメータ
-|       │   └── report.pdf         # キャリブ品質レポート
-|       └── ...
+|   └── vehicles/
+|       ├── vehicle01/
+|       |   └── calibrations/
+|       |       ├── calib_v003_2026-07-01/ # キャリブレーション実施ごとに1フォルダ
+|       |       │   ├── intrinsics/        # カメラ内部パラメータ
+|       |       │   ├── extrinsics/        # センサ間外部パラメータ
+|       |       │   └── report.pdf         # キャリブ品質レポート
+|       |       └── ...
+|       ├── vehicle02/
+|       :   └── calibrations/
+|               ├── calib_v003_2026-07-01/
+|               └── ...
 ├── platform_lincoln_7cam-lidar/
 :
+├── vehicle_types/
+|   └── lincoln_mkz.yaml
 └── catalog.sqlite                 # 全ドライブの索引
 ```
 

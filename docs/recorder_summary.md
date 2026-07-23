@@ -48,7 +48,7 @@ nuScenesのlogテーブル等に必要な情報を保持（将来的にはCosmos
 drive_id: 2026-07-16_1030_vehicle01_osaka-umeda
 uuid: 7f3a...
 source: real                   # real / carla（現状の対応ソース）
-schema_version: 0.2.0          # shasou-coreの互換性判定に使用
+schema_version: 0.3.0          # shasou-coreの互換性判定に使用
 platform: platform_lincoln_6cam-lidar
 vehicle: vehicle01
 ego_pose_backend: ppk-ins      # 自己位置推定（carlaソースではcarla-gt）

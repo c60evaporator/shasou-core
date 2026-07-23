@@ -199,7 +199,7 @@
       "type": "integer"
     },
     "schema_version": {
-      "default": "0.2.0",
+      "default": "0.3.0",
       "description": "書き込み時の shasou-core スキーマ版",
       "title": "Schema Version",
       "type": "string"

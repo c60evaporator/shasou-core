@@ -16,10 +16,11 @@ flowchart LR
     A --> B --> C --> D --> E
 ```
 
-shasouエコシステムは、以下3リポジトリから構成される
+shasouエコシステムは、以下4リポジトリから構成される
 - **shasou-recorder**: Jetson等で動作させ、車載収録を実施するツールキット (ROS 2 / MCAP)。想定している概要は`docs/recorder_summary.md`も参照
 - **shasou-studio**: recorderで取得したデータをインポートして保管し、nuScenes互換データ変換、Scene切り取り、nuScenes形式出力等を実施するためのWebアプリ。データキュレーションのための分析機能も含む
 - **shasou-core** (本リポジトリ): 上記 2 つが共有するmanifestスキーマ・MCAPトピック規約・trajectory成果物形式をPydantic + JSON Schemaで定義
+- **shasou-msgs**: shasou-recorderとのやり取りに使用するROSメッセージ
 
 #### データの階層構造
 記録されるデータは以下の階層構造を持つ

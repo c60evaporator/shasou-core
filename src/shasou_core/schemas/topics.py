@@ -11,6 +11,13 @@ recorder の起動時検証と studio の取り込み時検証が、この同じ
 sensor_config (manifest) の「チャネル -> トピック名」対応が各ユーザの実際の
 トピック名の正である。ここで定義するのは modality ごとの「型と必須フィールド」
 と、可変部を除いた命名規約 (末尾セグメント等) のみ。
+
+QoS と記録対象について
+----------------------
+契約は「型」だけでなく publisher 側の QoS (DDS の接続条件) と、bag への記録
+対象かどうか (`TopicContract.recorded`) も持つ。publish はされるが録らない
+トピック (/tf、gt/object_attributes) を契約として認知することで、validation が
+それらを「想定外のトピック」と誤検知せずに済む。
 """
 
 from __future__ import annotations
@@ -20,7 +27,7 @@ from enum import Enum
 from pydantic import Field
 
 from ..constants import TOPIC_NAMESPACE
-from .common import DataSource, Modality, ShasouModel
+from .common import DataSource, FrozenModel, Modality, ShasouModel
 
 # --------------------------------------------------------------------------
 # ROS メッセージ型 (文字列定数)
@@ -39,6 +46,7 @@ class RosType(str, Enum):
     TF_MESSAGE = "tf2_msgs/msg/TFMessage"
     CLOCK = "rosgraph_msgs/msg/Clock"
     BOOL = "std_msgs/msg/Bool"
+    STRING = "std_msgs/msg/String"
     # ackermann_msgs は準標準 (別 apt パッケージ)
     ACKERMANN_DRIVE_STAMPED = "ackermann_msgs/msg/AckermannDriveStamped"
     JOINT_STATE = "sensor_msgs/msg/JointState"
@@ -96,6 +104,46 @@ RADAR_POINT_FIELDS: list[PointFieldSpec] = [
 PEDAL_JOINT_NAMES: tuple[str, ...] = ("throttle_pedal", "brake_pedal")
 
 # --------------------------------------------------------------------------
+# QoS 規約
+# --------------------------------------------------------------------------
+# DDS は publisher と subscriber の QoS が両立しないと接続しない。publisher 側
+# (CARLA ブリッジ・実車ドライバ) の設定を契約として明記し、recorder の
+# subscriber がこれに合わせる。core は ROS 非依存なので rclpy.qos.QoSProfile は
+# 使わず文字列 enum で表現し、recorder 側のアダプタが rclpy 型へ変換する。
+
+
+class QosReliability(str, Enum):
+    RELIABLE = "reliable"
+    BEST_EFFORT = "best_effort"
+
+
+class QosHistory(str, Enum):
+    KEEP_LAST = "keep_last"
+    KEEP_ALL = "keep_all"
+
+
+class QosDurability(str, Enum):
+    VOLATILE = "volatile"
+    TRANSIENT_LOCAL = "transient_local"
+
+
+class QosProfile(FrozenModel):
+    """トピックの QoS 設定。値型なので不変 (契約の既定値として共有される)。"""
+
+    reliability: QosReliability = QosReliability.RELIABLE
+    history: QosHistory = QosHistory.KEEP_LAST
+    depth: int = Field(default=10, ge=1, description="history=keep_last のキュー長")
+    durability: QosDurability = QosDurability.VOLATILE
+
+
+# 通常のトピック (センサ・GT・車両状態) はすべてこの既定を使う。
+DEFAULT_QOS = QosProfile()
+
+# 静的 tf は「late joiner が後から購読しても最後の 1 通を受け取れる」必要がある
+# ため transient_local + depth=1。tf_static 専用の例外。
+TRANSIENT_LOCAL_QOS = QosProfile(depth=1, durability=QosDurability.TRANSIENT_LOCAL)
+
+# --------------------------------------------------------------------------
 # トピック契約
 # --------------------------------------------------------------------------
 
@@ -128,6 +176,17 @@ class TopicContract(ShasouModel):
     )
     required_names: tuple[str, ...] | None = Field(
         default=None, description="JointState の name 配列など固定語彙"
+    )
+    qos: QosProfile = Field(
+        default=DEFAULT_QOS,
+        description="publisher 側の QoS。subscriber はこれに合わせる",
+    )
+    recorded: bool = Field(
+        default=True,
+        description=(
+            "bag への記録対象か。False は「契約として存在は認知するが録らない」"
+            "トピック (publish はされるので購読は可能)"
+        ),
     )
     notes: str = ""
 
@@ -250,6 +309,18 @@ GT_AGENT_PLAN = TopicContract(
     frame_id="map",
     notes="PDM-Lite の計画軌跡。E2E 学習資産",
 )
+GT_OBJECT_ATTRIBUTES = TopicContract(
+    key="gt_object_attributes",
+    ros_type=RosType.STRING,
+    modality=Modality.VEHICLE,
+    role=TopicRole.GROUND_TRUTH,
+    recorded=False,
+    notes=(
+        "<ns>/gt/object_attributes。JSON ペイロード。CARLA ブリッジが将来の拡張余地"
+        "として publish するが記録しない: visibility 等は studio の変換パイプラインが"
+        "オフライン算出する方針のため"
+    ),
+)
 GT_DEPTH_IMAGE = TopicContract(
     key="gt_depth_image",
     ros_type=RosType.IMAGE,
@@ -274,7 +345,20 @@ TF_STATIC = TopicContract(
     ros_type=RosType.TF_MESSAGE,
     modality=Modality.VEHICLE,
     role=TopicRole.SENSOR,
+    qos=TRANSIENT_LOCAL_QOS,
     notes="base_link -> 各センサの外部パラメータ。動的 tf は記録しない",
+)
+TF_DYNAMIC = TopicContract(
+    key="tf",
+    ros_type=RosType.TF_MESSAGE,
+    modality=Modality.VEHICLE,
+    role=TopicRole.SENSOR,
+    recorded=False,
+    notes=(
+        "動的 tf (map -> base_link)。publish はされるが記録しない: gt/ego_odom と "
+        "情報が重複し、リプレイ時の tf 時刻補間問題を持ち込むため (frames.py 参照)。"
+        "ego pose の正はトピック / trajectory 成果物"
+    ),
 )
 
 # --------------------------------------------------------------------------
@@ -284,16 +368,22 @@ TF_STATIC = TopicContract(
 ALL_CONTRACTS: list[TopicContract] = [
     CAMERA_IMAGE, CAMERA_INFO, LIDAR_POINTS, RADAR_POINTS, IMU_DATA, GNSS_FIX,
     VEHICLE_DRIVE_STATE, VEHICLE_PEDALS, VEHICLE_REVERSE, VEHICLE_HANDBRAKE,
-    EVENTS, TF_STATIC,
-    GT_EGO_ODOM, GT_OBJECTS, GT_AGENT_PLAN, GT_DEPTH_IMAGE, CLOCK,
+    EVENTS, TF_STATIC, TF_DYNAMIC,
+    GT_EGO_ODOM, GT_OBJECTS, GT_AGENT_PLAN, GT_OBJECT_ATTRIBUTES, GT_DEPTH_IMAGE,
+    CLOCK,
 ]
 
 
-def contracts_for_source(source: DataSource) -> list[TopicContract]:
-    """指定ソースで存在すべきトピック契約の一覧を返す。
+def contracts_for_source(
+    source: DataSource, *, recorded_only: bool = False
+) -> list[TopicContract]:
+    """指定ソースで存在しうるトピック契約の一覧を返す。
 
     - CARLA: 共通センサ + 車両 + GT + 基盤。REAL_ONLY は除外
     - REAL:  共通センサ + 車両。GROUND_TRUTH / SIM_ONLY は除外
+
+    既定では recorded=False の契約 (publish はされるが録らないもの) も含む。
+    「bag に存在すべきトピック」を得たい場合は recorded_only=True を指定する。
     """
     result: list[TopicContract] = []
     for c in ALL_CONTRACTS:
@@ -302,6 +392,8 @@ def contracts_for_source(source: DataSource) -> list[TopicContract]:
         if source == DataSource.REAL and c.role in (
             TopicRole.GROUND_TRUTH, TopicRole.SIM_ONLY
         ):
+            continue
+        if recorded_only and not c.recorded:
             continue
         result.append(c)
     return result

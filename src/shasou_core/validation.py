@@ -248,6 +248,9 @@ def validate_observed_topics(
        gt_depth は sensor_config に depth チャネルが無い (RGB と光学フレームを
        共有する派生 GT) ため、カメラチャネルに対して展開する
     3. REAL に gt / clock が混入していれば WARNING (異常だが取り込みは可能)
+    4. 記録対象外の契約 (recorded=False。/tf、gt/object_attributes) は 1 の
+       存在確認から外す。無いのが正常なので Issue を出さない。逆に bag に
+       入っていた場合は設定ミスの兆候として WARNING を出す
     """
     result = ValidationResult()
     declared = set(manifest.sensor_config.values())
@@ -258,7 +261,7 @@ def validate_observed_topics(
             topic=topic,
         )
 
-    for contract in contracts_for_source(manifest.source):
+    for contract in contracts_for_source(manifest.source, recorded_only=True):
         severity, code = _absence_issue(contract)
         if contract.per_channel:
             for channel in sorted(_channels_for(manifest, contract)):
@@ -280,6 +283,29 @@ def validate_observed_topics(
                 contract=contract.key,
             )
 
+    # 記録対象外の契約が bag に入っていた場合。データ自体は使えるので ERROR には
+    # しないが、bag の肥大やリプレイ時の tf 補間事故につながる設定ミスの兆候
+    # なので知らせる。想定外トピックとは別 code にして下流が選別できるようにする。
+    for contract in contracts_for_source(manifest.source):
+        if contract.recorded:
+            continue
+        channels = (
+            sorted(_channels_for(manifest, contract)) if contract.per_channel else [""]
+        )
+        for channel in channels:
+            if not _is_observed(
+                observed_topic_names, _expected_suffixes(channel, contract)
+            ):
+                continue
+            result.add(
+                Severity.WARNING, "not_recorded_topic_present",
+                f"記録対象外のトピック {contract.key} が bag にある "
+                "(recorder の記録設定を確認)",
+                contract=contract.key, channel=channel,
+            )
+
+    # 記録しない契約も allowed_keys に含める (契約上は存在してよいトピックなので
+    # 「そのソースに存在しないはず」の誤検知にしない)。
     allowed_keys = {c.key for c in contracts_for_source(manifest.source)}
     for contract in ALL_CONTRACTS:
         if contract.key in allowed_keys:

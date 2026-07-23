@@ -266,6 +266,57 @@ class TestObservedTopics:
         assert "unexpected_topic_for_source" in _codes(r, Severity.WARNING)
 
 
+class TestNotRecordedTopics:
+    """publish はされるが録らないトピック (/tf, gt/object_attributes)。"""
+
+    def test_tf_in_bag_is_warning_not_unexpected(self):
+        # 契約として認知しているので「想定外」ではない。ただし記録設定ミスの
+        # 兆候なので専用 code で知らせる
+        r = validate_observed_topics(
+            _manifest(), observed_topic_names=_observed(add=("/tf",)))
+        assert r.ok
+        warnings = _codes(r, Severity.WARNING)
+        assert "not_recorded_topic_present" in warnings
+        assert "unexpected_topic_for_source" not in warnings
+
+    def test_gt_object_attributes_in_carla_bag_is_warning(self):
+        r = validate_observed_topics(
+            _carla_manifest(),
+            observed_topic_names=_observed(
+                DataSource.CARLA, add=("/sensing/gt/object_attributes",)),
+        )
+        assert r.ok
+        warnings = _codes(r, Severity.WARNING)
+        assert "not_recorded_topic_present" in warnings
+        assert "unexpected_topic_for_source" not in warnings
+
+    def test_gt_object_attributes_in_real_bag_is_unexpected(self):
+        # ソース外 x 記録しない。実車 bag に GT が入っている方が重大な異常なので
+        # 従来どおり unexpected_topic_for_source として扱う
+        r = validate_observed_topics(
+            _manifest(),
+            observed_topic_names=_observed(add=("/sensing/gt/object_attributes",)),
+        )
+        assert r.ok
+        assert "unexpected_topic_for_source" in _codes(r, Severity.WARNING)
+
+    def test_absence_produces_no_issue(self):
+        # 無いのが正常。ERROR にしないのはもちろん Issue 自体を出さない
+        # (_observed() は /tf も gt/object_attributes も含まない)
+        for manifest, observed in (
+            (_manifest(), _observed()),
+            (_carla_manifest(), _observed(DataSource.CARLA)),
+        ):
+            r = validate_observed_topics(manifest, observed_topic_names=observed)
+            assert not r.issues
+
+    def test_tf_static_still_required(self):
+        # /tf を録らないことと /tf_static を録ることは別。取りこぼし防止
+        r = validate_observed_topics(
+            _manifest(), observed_topic_names=_observed(drop=("/sensing/tf_static",)))
+        assert "sensor_topic_absent" in _codes(r, Severity.WARNING)
+
+
 class TestCalibrationVsPlatform:
     """ChannelSpec (構成の宣言) と CameraIntrinsics (実測) の整合。"""
 

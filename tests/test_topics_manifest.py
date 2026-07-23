@@ -9,13 +9,20 @@ from shasou_core.schemas.manifest import (
     EgoPoseBackend,
 )
 from shasou_core.schemas.topics import (
+    DEFAULT_QOS,
     PEDAL_JOINT_NAMES,
+    TRANSIENT_LOCAL_QOS,
+    QosDurability,
+    QosHistory,
+    QosProfile,
+    QosReliability,
     TopicRole,
     contracts_for_source,
     resolve_topic_name,
     CAMERA_IMAGE,
     GT_DEPTH_IMAGE,
     RADAR_POINTS,
+    TF_STATIC,
 )
 
 
@@ -39,6 +46,61 @@ class TestTopicSets:
         # rcs/dynprop は optional
         opt = [f.name for f in RADAR_POINTS.point_fields if not f.required]
         assert "rcs" in opt
+
+
+class TestQos:
+    def test_default_profile(self):
+        # publisher (CARLA ブリッジ) の実設定。subscriber はこれに合わせる
+        assert DEFAULT_QOS.reliability == QosReliability.RELIABLE
+        assert DEFAULT_QOS.history == QosHistory.KEEP_LAST
+        assert DEFAULT_QOS.depth == 10
+        assert DEFAULT_QOS.durability == QosDurability.VOLATILE
+
+    def test_tf_static_is_the_exception(self):
+        assert TF_STATIC.qos == TRANSIENT_LOCAL_QOS
+        assert TF_STATIC.qos.durability == QosDurability.TRANSIENT_LOCAL
+        assert TF_STATIC.qos.depth == 1
+
+    def test_normal_contracts_use_default(self):
+        assert CAMERA_IMAGE.qos == DEFAULT_QOS
+        others = [
+            c for c in contracts_for_source(DataSource.CARLA) if c.key != "tf_static"
+        ]
+        assert all(c.qos == DEFAULT_QOS for c in others)
+
+    def test_profile_is_frozen_and_strict(self):
+        p = QosProfile()
+        with pytest.raises(ValidationError):
+            p.depth = 5
+        with pytest.raises(ValidationError):
+            QosProfile(depth=0)          # keep_last のキュー長は 1 以上
+        with pytest.raises(ValidationError):
+            QosProfile(deadline_ms=100)  # 未知フィールドは拒否
+
+
+class TestNotRecordedTopics:
+    def _keys(self, source, **kwargs):
+        return {c.key for c in contracts_for_source(source, **kwargs)}
+
+    def test_carla_includes_not_recorded_contracts(self):
+        # 契約としては認知する (validation の誤検知を防ぐため)
+        keys = self._keys(DataSource.CARLA)
+        assert {"tf", "gt_object_attributes"} <= keys
+
+    def test_recorded_only_excludes_them(self):
+        keys = self._keys(DataSource.CARLA, recorded_only=True)
+        assert "tf" not in keys and "gt_object_attributes" not in keys
+        # 録るトピックは残る
+        assert "tf_static" in keys and "gt_ego_odom" in keys
+
+    def test_real_has_tf_but_not_gt_attributes(self):
+        # role によるソース別フィルタは従来どおり効く
+        keys = self._keys(DataSource.REAL)
+        assert "tf" in keys
+        assert "gt_object_attributes" not in keys
+
+    def test_recorded_flag_defaults_true(self):
+        assert CAMERA_IMAGE.recorded is True
 
 
 class TestTopicNames:

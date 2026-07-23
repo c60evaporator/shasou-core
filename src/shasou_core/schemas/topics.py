@@ -43,6 +43,7 @@ class RosType(str, Enum):
     NAV_SAT_FIX = "sensor_msgs/msg/NavSatFix"
     ODOMETRY = "nav_msgs/msg/Odometry"
     PATH = "nav_msgs/msg/Path"
+    DETECTION3D_ARRAY = "vision_msgs/msg/Detection3DArray"
     TF_MESSAGE = "tf2_msgs/msg/TFMessage"
     CLOCK = "rosgraph_msgs/msg/Clock"
     BOOL = "std_msgs/msg/Bool"
@@ -295,11 +296,19 @@ GT_EGO_ODOM = TopicContract(
 )
 GT_OBJECTS = TopicContract(
     key="gt_objects",
-    ros_type=RosType.POINT_CLOUD2,  # 実体は独自 Detection3DArray 拡張
+    ros_type=RosType.DETECTION3D_ARRAY,
     modality=Modality.VEHICLE,
     role=TopicRole.GROUND_TRUTH,
     frame_id="map",
-    notes="全アクターの 3D BBox・actor_id・クラス・速度。map 座標。型は shasou_msgs",
+    notes=(
+        "全アクターの 3D BBox。map 座標。Detection3D.id = instance_id "
+        '("<route_index>_<carla_actor_id>"。アクターの生存期間中は安定でルート内で'
+        "一意なので nuScenes の instance_token に対応づく)。results は実クラス仮説"
+        "のみ (CARLA blueprint の type_id) で、score は GT なので常に 1.0 "
+        "(visibility 等の別の量を入れない)。visibility / attribute / num_lidar_pts "
+        "等の nuScenes 属性はこの契約に含まれず、studio の変換パイプラインが"
+        "オフライン算出する"
+    ),
 )
 GT_AGENT_PLAN = TopicContract(
     key="gt_agent_plan",

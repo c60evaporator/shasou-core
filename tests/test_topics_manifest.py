@@ -16,11 +16,13 @@ from shasou_core.schemas.topics import (
     QosHistory,
     QosProfile,
     QosReliability,
+    RosType,
     TopicRole,
     contracts_for_source,
     resolve_topic_name,
     CAMERA_IMAGE,
     GT_DEPTH_IMAGE,
+    GT_OBJECTS,
     RADAR_POINTS,
     TF_STATIC,
 )
@@ -39,6 +41,11 @@ class TestTopicSets:
         roles = {c.role for c in contracts}
         assert TopicRole.GROUND_TRUTH not in roles
         assert TopicRole.SIM_ONLY not in roles
+
+    def test_gt_objects_is_detection3d_array(self):
+        # 契約は CARLA ブリッジの実装 (vision_msgs) に合わせる
+        assert GT_OBJECTS.ros_type == RosType.DETECTION3D_ARRAY
+        assert GT_OBJECTS.ros_type.value == "vision_msgs/msg/Detection3DArray"
 
     def test_radar_required_fields(self):
         required = [f.name for f in RADAR_POINTS.point_fields if f.required]
@@ -181,3 +188,43 @@ class TestManifest:
         m = DriveManifest(**_base_manifest())
         restored = DriveManifest.model_validate(m.model_dump())
         assert restored == m
+
+
+class TestManifestTags:
+    def test_default_is_empty_dict(self):
+        assert DriveManifest(**_base_manifest()).tags == {}
+
+    def test_default_is_not_shared(self):
+        # default_factory なのでインスタンス間で共有されない
+        a = DriveManifest(**_base_manifest())
+        b = DriveManifest(**_base_manifest())
+        a.tags["route_id"] = "town12_route003"
+        assert b.tags == {}
+
+    def test_source_specific_tags_accepted(self):
+        # source 固有の概念は正式フィールドにせず tags で吸収する
+        carla = DriveManifest(**_base_manifest(
+            source=DataSource.CARLA, ego_pose_backend=EgoPoseBackend.CARLA_GT,
+            tags={"route_id": "town12_route003"}))
+        real = DriveManifest(**_base_manifest(tags={"campaign": "2026summer_rain"}))
+        assert carla.tags["route_id"] == "town12_route003"
+        assert real.tags["campaign"] == "2026summer_rain"
+
+    def test_roundtrip(self):
+        m = DriveManifest(**_base_manifest(
+            tags={"route_id": "town12_route003", "campaign": "2026summer_rain"}))
+        assert DriveManifest.model_validate(m.model_dump()) == m
+        assert DriveManifest.model_validate_json(m.model_dump_json()) == m
+
+    @pytest.mark.parametrize(
+        "key", ["Route_ID", "route id", "1st", "route-id", "_route", ""])
+    def test_malformed_key_rejected(self, key):
+        # 表記揺れを弾いて studio のタグ検索を効かせる
+        with pytest.raises(ValidationError):
+            DriveManifest(**_base_manifest(tags={key: "x"}))
+
+    def test_value_is_free_text(self):
+        # 制約はキーのみ。値は自由文字列
+        m = DriveManifest(**_base_manifest(tags={
+            "note": "雨天 / 夜間 (route #3)", "empty": ""}))
+        assert m.tags["note"] == "雨天 / 夜間 (route #3)"

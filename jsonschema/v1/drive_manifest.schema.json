@@ -43,7 +43,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "1 ドライブの自己記述メタデータ (manifest.yaml)。",
+  "description": "1 ドライブの自己記述メタデータ (manifest.yaml)。\n\ntags の設計意図 (階層ではなく属性で表現する)\n-------------------------------------------\n走行の分類軸には、正式フィールドにするほど普遍的ではないが文脈ごとに必要に\nなるものがある (CARLA のルート識別 route_id、実車の収集キャンペーン campaign\n等)。これらを正式フィールドにすると「他の source では意味を持たないフィールド」\nが増えていくため、source 固有の概念は tags という属性で吸収する。\nstudio の検索・フィルタはタグベースで実装する想定。\n\n例: CARLA {\"route_id\": \"town12_route003\"} / 実車 {\"campaign\": \"2026summer_rain\"}",
   "properties": {
     "archive_status": {
       "$ref": "#/$defs/ArchiveStatus",
@@ -113,6 +113,14 @@
     "status": {
       "$ref": "#/$defs/DriveStatus",
       "default": "recorded"
+    },
+    "tags": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "走行の分類・検索用の自由なキーバリュー。キーは小文字 snake_case、値は自由文字列 (例 route_id / campaign)",
+      "title": "Tags",
+      "type": "object"
     },
     "uuid": {
       "description": "機械的一意性のための UUID",

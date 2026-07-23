@@ -7,6 +7,7 @@ manifest は自己完結する (ディレクトリから自明な情報も冗長
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from enum import Enum
 
@@ -38,8 +39,24 @@ class ArchiveStatus(str, Enum):
     GLACIER = "glacier"    # Glacier Deep Archive へ退避
 
 
+# タグキーの命名規約。events.py の SOURCE_PATTERN と同じ規約 (小文字 snake_case)。
+# 表記揺れ ("Route_ID" と "route_id" の混在) を弾いて studio のタグ検索を効かせる。
+TAG_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
 class DriveManifest(ShasouModel):
-    """1 ドライブの自己記述メタデータ (manifest.yaml)。"""
+    """1 ドライブの自己記述メタデータ (manifest.yaml)。
+
+    tags の設計意図 (階層ではなく属性で表現する)
+    -------------------------------------------
+    走行の分類軸には、正式フィールドにするほど普遍的ではないが文脈ごとに必要に
+    なるものがある (CARLA のルート識別 route_id、実車の収集キャンペーン campaign
+    等)。これらを正式フィールドにすると「他の source では意味を持たないフィールド」
+    が増えていくため、source 固有の概念は tags という属性で吸収する。
+    studio の検索・フィルタはタグベースで実装する想定。
+
+    例: CARLA {"route_id": "town12_route003"} / 実車 {"campaign": "2026summer_rain"}
+    """
 
     # --- 識別 ---
     drive_id: str = Field(description="人間可読 ID。日付_時刻_車両_場所")
@@ -72,6 +89,15 @@ class DriveManifest(ShasouModel):
         description="正規チャネル名 -> 実トピック名。RADAR 含む",
     )
 
+    # --- 分類・検索 ---
+    tags: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "走行の分類・検索用の自由なキーバリュー。キーは小文字 snake_case、"
+            "値は自由文字列 (例 route_id / campaign)"
+        ),
+    )
+
     # --- 状態 ---
     status: DriveStatus = DriveStatus.RECORDED
     archive_status: ArchiveStatus = ArchiveStatus.NONE
@@ -86,6 +112,18 @@ class DriveManifest(ShasouModel):
             raise ValueError(
                 f"sensor_config のチャネル名が命名規約に違反: {malformed}. "
                 "CAM_/LIDAR_/RADAR_ で始まり大文字英数字とアンダースコアのみ許容"
+            )
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def _valid_tag_keys(cls, v: dict[str, str]) -> dict[str, str]:
+        # 値は自由文字列。キーだけ命名規約を課して表記揺れを防ぐ。
+        malformed = sorted(k for k in v if not TAG_KEY_PATTERN.match(k))
+        if malformed:
+            raise ValueError(
+                f"tags のキーが命名規約に違反: {malformed}. "
+                "小文字英字で始まり、小文字英数字とアンダースコアのみ許容"
             )
         return v
 

@@ -8,36 +8,30 @@ shasou-recorderは以下のフォルダ構成でデータを収集
 
 ```
 data/
-├── platform_lincoln_6cam-lidar/       # platformごとにフォルダを分ける
-|   ├── drives/
-|   │   └── 2026-07-16_1030_vehicle01_osaka-umeda/   # drive_id
-|   │       ├── manifest.yaml          # ドライブの自己記述メタデータ
-|   │       ├── bags/
-|   │       │   ├── segment_0000.mcap  # 分割収録（後述）
-|   │       │   ├── segment_0001.mcap
-|   │       │   └── checksums.sha256
-|   │       ├── tags/
-|   │       │   └── events.jsonl       # 収録中のイベントタグ（追記のみ）
-|   │       ├── health/
-|   │       │   └── topic_stats.json   # Hz・ドロップ率・ディスクログ
-|   │       └── notes.md               # 同乗者の自由記述（任意）
-|   └── vehicles/
-|       ├── vehicle01/
-|       |   └── calibrations/
-|       |       ├── calib_v003_2026-07-01/ # キャリブレーション実施ごとに1フォルダ
-|       |       │   ├── intrinsics/        # カメラ内部パラメータ
-|       |       │   ├── extrinsics/        # センサ間外部パラメータ
-|       |       │   └── report.pdf         # キャリブ品質レポート
-|       |       └── ...
-|       ├── vehicle02/
-|       :   └── calibrations/
-|               ├── calib_v003_2026-07-01/
-|               └── ...
-├── platform_lincoln_7cam-lidar/
-:
-├── vehicle_types/
-|   └── lincoln_mkz.yaml
-└── catalog.sqlite                 # 全ドライブの索引
+├── definitions/                       # studio が編集元。recorder は同期して読むだけ
+│   ├── vehicle_types/
+│   │   └── lincoln_mkz.yaml
+│   ├── platforms/
+│   │   └── platform_lincoln_6cam-lidar.yaml
+│   ├── vehicles/
+│   │   └── vehicle01.yaml
+│   └── calibrations/
+│       └── vehicle01/                 # キャリブ値は車両個体固有
+│           └── calib_v003_2026-07-01/
+│               ├── calibration.yaml   # CalibrationSet (正)
+│               └── report.pdf         # 品質レポート (再投影誤差等)
+├── platform_lincoln_6cam-lidar/       # recorder が生成する収録データ
+│   └── drives/
+│       └── 2026-07-16_1030_vehicle01_osaka-umeda/   # drive_id
+│           ├── manifest.yaml          # ドライブの自己記述メタデータ
+│           ├── bags/
+│           │   ├── segment_0000.mcap  # 分割収録
+│           │   ├── segment_0001.mcap
+│           │   └── checksums.sha256
+│           ├── tags/events.jsonl      # イベントタグ (追記のみ)
+│           ├── health/topic_stats.json
+│           └── notes.md               # 自由記述 (任意)
+└── catalog.sqlite                     # 全ドライブの索引
 ```
 
 ### 各収集データの内容
@@ -47,24 +41,28 @@ nuScenesのlogテーブル等に必要な情報を保持（将来的にはCosmos
 ```yaml
 drive_id: 2026-07-16_1030_vehicle01_osaka-umeda
 uuid: 7f3a...
-source: real                   # real / carla（現状の対応ソース）
-schema_version: 0.3.0          # shasou-coreの互換性判定に使用
+source: real                   # real / carla
+schema_version: 0.3.0          # shasou-core の互換性判定に使用 (MAJOR 一致を要求)
 platform: platform_lincoln_6cam-lidar
 vehicle: vehicle01
-ego_pose_backend: ppk-ins      # 自己位置推定（carlaソースではcarla-gt）
+ego_pose_backend: ppk-ins      # carla なら carla-gt
 calib_id: calib_v003_2026-07-01
 date_captured: "2026-07-16"
-location: osaka-umeda          # → nuScenes変換後のlog.locationとなる
+location: osaka-umeda          # → nuScenes の log.location
 driver: tanaka
-weather: rain                  # → nuScenes変換後のscene.descriptionの素材となる
-recorder_version: v1.2.0       # 収録ソフトのバージョン
-sensor_config:                 # 正規チャネル名 ⇔ 実トピック名の対応（実センサのみ）
-  LIDAR_TOP: /sensing/lidar_top/points
-  RADAR_FRONT: /sensing/radar_front/points
-  CAM_FRONT: /sensing/cam_front/image_raw/compressed
-  ...
-status: verified               # recorded → transferred → verified → imported
-archive_status: none           # none / archived / glacier（statusとは独立の軸）
+weather: rain                  # → scene.description の素材
+recorder_version: v1.2.0
+sensor_config:                 # 正規チャネル名 ⇔ 実トピック名 (実センサのみ)
+  LIDAR_TOP: /shasou/lidar_top/points
+  RADAR_FRONT: /shasou/radar_front/points
+  CAM_FRONT: /shasou/cam_front/image_raw/compressed
+tags:                          # 分類・検索用。キーは小文字 snake_case
+  route_id: town12_route003
+  scenario: cut_in
+  stop_reason: service
+  completed: "true"
+status: recorded               # recorded → transferred → verified → imported
+archive_status: none           # none / archived / glacier
 ```
 
 ※ statusのimportedはshasou-studioがRaw層取り込み時に書き戻す。recorderが自力で書くのはverifiedまで。carlaソースの場合はsensor_configの実センサに加え、gt系トピック（gt/ego_odom, gt/objects, gt/depth_* 等）が別途存在する。

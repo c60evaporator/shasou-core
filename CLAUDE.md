@@ -196,7 +196,7 @@ core は台数構成を固定しない。core が持つのは**命名規約** (`
 | `schemas/topics.py` | MCAP トピック契約をデータとして定義 (型・QoS・記録対象) | RADAR=velocity_radial のみ必須。Depth は gt 配下。QoS は文字列 enum (ROS 非依存)。`recorded=False` = publish されるが録らない |
 | `schemas/manifest.py` | DriveManifest | チャネルは命名規約のみ検証 (実在検証は validation)。`tags` は source 固有の分類軸を吸収する自由 KV (§4.9) |
 | `schemas/trajectory.py` | 軌跡成果物スキーマ | 選択肢 B: 1 drive 1 対多 backend |
-| `schemas/platform.py` | Platform/ChannelSpec/CameraConfig | 構成の**宣言** (公称値・型参照)。実測値は calibration 側。車両パラメータは vehicle.py |
+| `schemas/platform.py` | Platform/ChannelSpec/CameraConfig | 構成の**宣言** (公称値・型参照・期待レート `expected_hz`)。実測値は calibration 側。車両パラメータは vehicle.py |
 | `schemas/vehicle.py` | VehicleType/Vehicle/CanSpec/VehicleDimensions | 車種の公称値+CAN デフォルトと個体の CAN 上書き。`effective_can_spec` で実効仕様を合成 (フリート運用) |
 | `schemas/calibration.py` | CalibrationSet/SensorCalibEntry/CameraIntrinsics/SensorExtrinsics | キャリブ 1 回ごとの**実測値** (車両個体固有。`vehicle` 必須)。token は derived_token で決定的生成 |
 | `schemas/events.py` | EventTag (events.jsonl 1 行 = ROS EventTag ペイロード) | type=閉じた enum / source=str (規約強制) / label=自由。timestamp のみ strict |
@@ -404,7 +404,7 @@ LocalFileProvider でスタンドアロンも可)。使用した定義の版を 
 
 ```bash
 pip install -e ".[dev,io]"     # 開発セットアップ
-pytest                          # 全テスト (現在 233 件。io 無しだと 1 件 skip)
+pytest                          # 全テスト (現在 241 件。io 無しだと 1 件 skip)
 python scripts/export_jsonschema.py           # JSON Schema 再生成
 python scripts/export_jsonschema.py --check   # 生成物がコードと一致するか
 ```

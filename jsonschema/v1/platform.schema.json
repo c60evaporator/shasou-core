@@ -93,6 +93,20 @@
           "title": "Channel",
           "type": "string"
         },
+        "expected_hz": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "このチャネルの期待メッセージレート [Hz]。recorder が収録時の drop_rate 算出に使う。データセットのスペックとして platform 定義で明示する",
+          "title": "Expected Hz"
+        },
         "modality": {
           "$ref": "#/$defs/Modality"
         },

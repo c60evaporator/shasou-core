@@ -7,8 +7,8 @@ recorder は同期して使う。同一 platform に複数の車両個体 (Vehic
 studio の責務であり core は関与しない。
 
 calibration.py との責務分担: ChannelSpec は *構成上の宣言* (設計値・公称値。
-期待する内部パラメータモデルの型参照や設計搭載位置) を持ち、実測の歪み係数・
-実測搭載位置はキャリブレーション 1 回ごとの calibration.py 側が持つ。
+期待する内部パラメータモデルの型参照・設計搭載位置・期待レート) を持ち、実測の
+歪み係数・実測搭載位置はキャリブレーション 1 回ごとの calibration.py 側が持つ。
 宣言と実測の整合照合は validation.py の責務。
 
 車両個体の物理パラメータ・CAN 仕様は vehicle.py (VehicleType / Vehicle) の責務。
@@ -73,6 +73,16 @@ class ChannelSpec(ShasouModel):
         default=None,
         description="base_link 基準の設計搭載位置 (公称値)。カメラは光学フレーム。"
         "実測搭載位置は calibration 側",
+    )
+    # 期待レートを持てるのはチャネル (= 実センサ) だけ。車両状態トピック
+    # (vehicle_drive_state / vehicle_pedals) や gt 系はチャネルに紐づかないので
+    # ここでは表現できない。drop_rate が重要なのは主にセンサデータなので当面は
+    # これで足りるが、それらのレートも要るようになったら別の持たせ方
+    # (topics.py の契約側に持たせる等) を検討する。
+    expected_hz: Optional[float] = Field(
+        default=None, gt=0,
+        description="このチャネルの期待メッセージレート [Hz]。recorder が収録時の "
+        "drop_rate 算出に使う。データセットのスペックとして platform 定義で明示する",
     )
     camera: Optional[CameraConfig] = Field(
         default=None,

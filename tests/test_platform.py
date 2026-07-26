@@ -73,6 +73,46 @@ class TestChannelSpec:
             )
 
 
+class TestExpectedHz:
+    """期待レートは platform 定義が持つ (recorder の drop_rate 算出の源)。"""
+
+    def test_default_is_none(self):
+        # platform 定義は手書きされうるので optional。無ければ recorder は
+        # drop_rate を None にする
+        assert ChannelSpec(**_camera_spec()).expected_hz is None
+        assert ChannelSpec(
+            channel="LIDAR_TOP", modality=Modality.LIDAR).expected_hz is None
+
+    def test_positive_value_accepted(self):
+        spec = ChannelSpec(**_camera_spec(expected_hz=20.0))
+        assert spec.expected_hz == 20.0
+
+    @pytest.mark.parametrize("hz", [0, 0.0, -1.0])
+    def test_non_positive_rejected(self, hz):
+        with pytest.raises(ValidationError):
+            ChannelSpec(**_camera_spec(expected_hz=hz))
+
+    def test_any_modality_can_declare_rate(self):
+        # modality に依らない共通概念なので CameraConfig ではなく ChannelSpec 直下
+        lidar = ChannelSpec(
+            channel="LIDAR_TOP", modality=Modality.LIDAR, expected_hz=10.0)
+        radar = ChannelSpec(
+            channel="RADAR_FRONT", modality=Modality.RADAR, expected_hz=13.0)
+        assert (lidar.expected_hz, radar.expected_hz) == (10.0, 13.0)
+
+    def test_json_roundtrip(self):
+        spec = ChannelSpec(**_camera_spec(expected_hz=20.0))
+        assert ChannelSpec.model_validate_json(spec.model_dump_json()) == spec
+
+    def test_platform_json_roundtrip(self):
+        p = Platform(**_platform(sensor_rig=[
+            ChannelSpec(**_camera_spec(expected_hz=20.0)),
+            ChannelSpec(
+                channel="LIDAR_TOP", modality=Modality.LIDAR, expected_hz=10.0),
+        ]))
+        assert Platform.model_validate_json(p.model_dump_json()) == p
+
+
 def _platform(**overrides):
     data = dict(
         platform_id="platform_lincoln_6cam-lidar",

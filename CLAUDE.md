@@ -31,7 +31,7 @@ erDiagram
     platform ||--o{ vehicle : ""
     vehicle ||--o{ calibration : ""
     vehicle ||--o{ drive : ""
-    calibration ||--|{ drive : ""
+    calibration ||--o{ drive : ""
     
     vehicle_type {
         string vehicle_type_id
@@ -62,9 +62,9 @@ erDiagram
 ```
 
 - vehicle_type: 車種を表す。ホイールベース・外形寸法等の公称物理パラメータと、CAN仕様のデフォルト（can_defaults）を持つ。同一vehicle_typeでも個体差でCAN仕様が異なりうる分はvehicleのcan_overridesが上書きする。shasou-studioで定義を作成・管理し、recorderは同期時にvehicleから紐付けて取得（studio非依存のローカル定義でも動作可）
-- platform: センサ構成（sensor_rig）・車種（vehicle_type）が一致するデータをグルーピングしたもの。同一platformに複数の車両個体（vehicle）が属しうる（フリート運用）。shasou-studioで定義を作成・管理し。recorderは同期時にvehicleから紐付けて取得（studio非依存のローカル定義でも動作可）
-- vehicle: 車両個体を表す。所属platform（platform_id）と、車種デフォルトをフィールド単位で上書きするCAN仕様（can_overrides）を持つ。実効CAN仕様は車種のcan_defaultsをcan_overridesが覆って求める。運用管理情報はshasou-studioの責務でcoreは持たない。shasou-studioで登録・管理し、recorder同期時のキーとして作用する（studio非依存のローカル定義でも動作可）
-- calibration: キャリブレーション1回ごとに作成される（複数センサを含む）。1回のcalibrationはnuScenes形式変換時に複数センサ分のcalibrated_sensorレコードに展開される。shasou-recorderがキャリブレーションごとに自動作成する
+- platform: センサ構成（sensor_rig）・車種（vehicle_type）が一致するデータをグルーピングしたもの。同一platformに複数の車両個体（vehicle）が属しうる（フリート運用）。shasou-studioで定義を作成・管理し。recorderは同期時にvehicleから紐付けて取得（studio非依存のローカル定義でも動作可）。学習データセットの構成 (複数 platform を混ぜるか) は studio の責務で、 platform は収録リグの同一性という客観的事実だけを表す
+- vehicle: 車両個体を表す。所属platform（platform_id）と、車種デフォルト仕様を個体ごとに上書きするCAN仕様（can_overrides）を持つ。実効CAN仕様は車種のcan_defaultsをcan_overridesが覆って求める。運用管理情報はshasou-studioの責務でcoreは持たない。shasou-studioで登録・管理し、recorder同期時のキーとして作用する（studio非依存のローカル定義でも動作可）
+- calibration: キャリブレーション1回ごとに作成される（複数センサを含む）。**キャリブ値は個体固有**なので vehicle 配下に置く。他車両へ流用してはならない。**計算・管理は studio の責務**で、recorder は定義として同期して読むだけ。ただしキャリブ用データの収録 (チェッカーボード撮影等) は通常の収録なので`record --now` を使い、`tags` に用途を残せばよい (専用機能は持たない)
 - drive: 1走行ごとに取得され、IDとしてdrive_idが割り当てられる。1つのdriveがnuScenes形式変換後のlogと1対1で対応。shasou-recorderが走行ごとに自動作成する
 
 #### データ収集のワークフロー

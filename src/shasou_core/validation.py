@@ -18,6 +18,11 @@
 各検証関数は「例外を投げる」のではなく Issue のリストを返す。呼び出し側が
 warning/error を選別し、部分受理 (以前議論した「一部棄却・残り取り込み」) を
 実装できるようにするため。重大度は Severity で表す。
+
+2 と 6 は manifest 非依存の *_by_ids 版を持つ。recorder の preflight
+(収録開始前検証) は manifest 生成前に定義同士を突き合わせるため、manifest を
+作れないまま同じ判定を必要とする。manifest 版は _by_ids 版へ委譲するだけなので、
+preflight (recorder) と取り込み (studio) の判定は構造的に分岐しえない。
 """
 
 from __future__ import annotations
@@ -124,10 +129,22 @@ def validate_manifest_against_platform(
 # --------------------------------------------------------------------------
 
 
-def validate_calibration_coverage(
-    manifest: DriveManifest, platform: Platform, calibration: CalibrationSet
+def validate_calibration_coverage_by_ids(
+    platform: Platform,
+    calibration: CalibrationSet,
+    *,
+    calib_id: str,
+    vehicle_id: str,
 ) -> ValidationResult:
     """calib_id が指す CalibrationSet が platform の全センサを網羅するか。
+
+    manifest 非依存版。recorder の preflight (収録開始前検証) は manifest 生成前に
+    定義同士を突き合わせるため、ID を直接受ける入口が要る。manifest 版
+    (validate_calibration_coverage) はこの関数へ委譲するので、preflight と
+    取り込みの判定は構造的に分岐しない。
+
+    calib_id / vehicle_id は「そのドライブが宣言する ID」で、calibration 側の
+    実際の値 (calibration.calib_id / calibration.vehicle) と突き合わせる。
 
     - calib_id 不一致 -> ERROR
     - vehicle 不一致 -> ERROR (他車両のキャリブ誤用。キャリブ値は個体固有)
@@ -137,20 +154,21 @@ def validate_calibration_coverage(
     """
     result = ValidationResult()
 
-    if manifest.calib_id != calibration.calib_id:
+    if calib_id != calibration.calib_id:
         result.add(
             Severity.ERROR, "calib_id_mismatch",
-            f"manifest.calib_id ({manifest.calib_id}) != "
+            f"宣言された calib_id ({calib_id}) != "
             f"calibration.calib_id ({calibration.calib_id})",
         )
 
-    if manifest.vehicle != calibration.vehicle:
+    if vehicle_id != calibration.vehicle:
         result.add(
             Severity.ERROR, "calibration_vehicle_mismatch",
-            f"manifest.vehicle ({manifest.vehicle}) != "
+            f"宣言された vehicle ({vehicle_id}) != "
             f"calibration.vehicle ({calibration.vehicle})。"
             "キャリブ値は車両個体固有で、他車両へ流用してはならない",
-            manifest_vehicle=manifest.vehicle,
+            # context のキーは既存のまま (下流のログ/UI が引いている想定)。
+            manifest_vehicle=vehicle_id,
             calibration_vehicle=calibration.vehicle,
         )
 
@@ -170,6 +188,25 @@ def validate_calibration_coverage(
             channel=ch,
         )
     return result
+
+
+# 命名について: ID 版を新設し、manifest 版は名前もシグネチャも据え置いて委譲に
+# する (_by_ids サフィックス)。ID 版を既存名にして manifest 版を別名に回すと、
+# studio や validate_drive の既存呼び出しが ImportError ではなく分かりにくい
+# TypeError で落ちる = 静かな破壊的変更になるため。
+def validate_calibration_coverage(
+    manifest: DriveManifest, platform: Platform, calibration: CalibrationSet
+) -> ValidationResult:
+    """manifest.calib_id が指す CalibrationSet が platform の全センサを網羅するか。
+
+    manifest から ID を取り出して validate_calibration_coverage_by_ids に委譲する
+    だけ。判定の実体はそちらにある。
+    """
+    return validate_calibration_coverage_by_ids(
+        platform, calibration,
+        calib_id=manifest.calib_id,
+        vehicle_id=manifest.vehicle,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -386,40 +423,58 @@ def validate_calibration_against_platform(
 # --------------------------------------------------------------------------
 
 
+def validate_vehicle_consistency_by_ids(
+    vehicle: Vehicle, *, platform_id: str, vehicle_id: str
+) -> ValidationResult:
+    """宣言された platform / 車両個体 ID と Vehicle 定義が整合するか。
+
+    manifest 非依存版 (preflight 用)。manifest 版はこの関数へ委譲する。
+    platform_id / vehicle_id は「そのドライブが宣言する ID」で、定義側の
+    vehicle.platform_id / vehicle.vehicle_id と突き合わせる。
+
+    - vehicle.platform_id != platform_id -> ERROR
+      (別 platform の車両個体を指している。センサ構成が食い違う)
+    - vehicle.vehicle_id != vehicle_id -> ERROR
+      (別の車両個体を指している)
+
+    宣言された platform が Platform.platform_id と一致するかは
+    validate_manifest_against_platform が担うため、ここでは vehicle 側との
+    突き合わせに徹する (宣言側を基準にする)。
+    """
+    result = ValidationResult()
+
+    if vehicle.platform_id != platform_id:
+        result.add(
+            Severity.ERROR, "vehicle_platform_mismatch",
+            f"vehicle.platform_id ({vehicle.platform_id}) != "
+            f"宣言された platform ({platform_id})",
+            # context のキーは既存のまま (下流のログ/UI が引いている想定)。
+            vehicle_platform_id=vehicle.platform_id,
+            manifest_platform=platform_id,
+        )
+
+    if vehicle.vehicle_id != vehicle_id:
+        result.add(
+            Severity.ERROR, "vehicle_id_mismatch",
+            f"vehicle.vehicle_id ({vehicle.vehicle_id}) != "
+            f"宣言された vehicle ({vehicle_id})",
+            vehicle_id=vehicle.vehicle_id,
+            manifest_vehicle=vehicle_id,
+        )
+    return result
+
+
 def validate_vehicle_consistency(
     manifest: DriveManifest, vehicle: Vehicle
 ) -> ValidationResult:
     """manifest が指す車両個体と Vehicle 定義が整合するか。
 
-    - vehicle.platform_id != manifest.platform -> ERROR
-      (別 platform の車両個体を指している。センサ構成が食い違う)
-    - vehicle.vehicle_id != manifest.vehicle -> ERROR
-      (manifest が別の車両個体を指している)
-
-    manifest.platform が Platform.platform_id と一致するかは
-    validate_manifest_against_platform が担うため、ここでは vehicle 側との
-    突き合わせに徹する (manifest 基準)。
+    manifest から ID を取り出して validate_vehicle_consistency_by_ids に委譲する
+    だけ。判定の実体はそちらにある。
     """
-    result = ValidationResult()
-
-    if vehicle.platform_id != manifest.platform:
-        result.add(
-            Severity.ERROR, "vehicle_platform_mismatch",
-            f"vehicle.platform_id ({vehicle.platform_id}) != "
-            f"manifest.platform ({manifest.platform})",
-            vehicle_platform_id=vehicle.platform_id,
-            manifest_platform=manifest.platform,
-        )
-
-    if vehicle.vehicle_id != manifest.vehicle:
-        result.add(
-            Severity.ERROR, "vehicle_id_mismatch",
-            f"vehicle.vehicle_id ({vehicle.vehicle_id}) != "
-            f"manifest.vehicle ({manifest.vehicle})",
-            vehicle_id=vehicle.vehicle_id,
-            manifest_vehicle=manifest.vehicle,
-        )
-    return result
+    return validate_vehicle_consistency_by_ids(
+        vehicle, platform_id=manifest.platform, vehicle_id=manifest.vehicle,
+    )
 
 
 # --------------------------------------------------------------------------

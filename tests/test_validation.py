@@ -25,10 +25,12 @@ from shasou_core.validation import (
     Severity,
     validate_calibration_against_platform,
     validate_calibration_coverage,
+    validate_calibration_coverage_by_ids,
     validate_drive,
     validate_manifest_against_platform,
     validate_observed_topics,
     validate_vehicle_consistency,
+    validate_vehicle_consistency_by_ids,
 )
 
 
@@ -184,6 +186,79 @@ class TestCalibrationCoverage:
             _manifest(vehicle="v01"), _platform(), self._calib(vehicle="v99"))
         assert not r.ok
         assert "calibration_vehicle_mismatch" in _codes(r, Severity.ERROR)
+
+
+def _shape(result):
+    """委譲の等価性を見るための比較用。Issue の (重大度, code) 列。"""
+    return [(i.severity, i.code) for i in result.issues]
+
+
+class TestCalibrationCoverageByIds:
+    """manifest 非依存版 (recorder の preflight が manifest 生成前に呼ぶ)。"""
+
+    def _calib(self, channels=("CAM_FRONT", "LIDAR_TOP"), calib_id="calib_v001",
+               vehicle="v01"):
+        return CalibrationSet(
+            calib_id=calib_id,
+            vehicle=vehicle,
+            captured_at="2026-07-01",
+            entries=[_calib_entry(c) for c in channels],
+        )
+
+    def test_full_coverage_ok(self):
+        r = validate_calibration_coverage_by_ids(
+            _platform(), self._calib(), calib_id="calib_v001", vehicle_id="v01")
+        assert r.ok
+        assert not r.issues
+
+    def test_calib_id_mismatch_error(self):
+        r = validate_calibration_coverage_by_ids(
+            _platform(), self._calib(calib_id="other"),
+            calib_id="calib_v001", vehicle_id="v01")
+        assert not r.ok
+        assert "calib_id_mismatch" in _codes(r, Severity.ERROR)
+
+    def test_vehicle_mismatch_error(self):
+        r = validate_calibration_coverage_by_ids(
+            _platform(), self._calib(vehicle="v99"),
+            calib_id="calib_v001", vehicle_id="v01")
+        assert not r.ok
+        assert "calibration_vehicle_mismatch" in _codes(r, Severity.ERROR)
+
+    def test_missing_calibration_is_error(self):
+        r = validate_calibration_coverage_by_ids(
+            _platform(), self._calib(channels=("CAM_FRONT",)),
+            calib_id="calib_v001", vehicle_id="v01")
+        assert not r.ok
+        assert "calibration_missing" in _codes(r, Severity.ERROR)
+
+    def test_extra_calibration_is_warning(self):
+        r = validate_calibration_coverage_by_ids(
+            _platform(), self._calib(channels=("CAM_FRONT", "LIDAR_TOP", "RADAR_FRONT")),
+            calib_id="calib_v001", vehicle_id="v01")
+        assert r.ok  # WARNING は ok を落とさない
+        assert "calibration_extra" in _codes(r, Severity.WARNING)
+
+    def test_ids_are_keyword_only(self):
+        # 同型の str が隣接するため取り違え防止でキーワード専用にしている
+        with pytest.raises(TypeError):
+            validate_calibration_coverage_by_ids(
+                _platform(), self._calib(), "calib_v001", "v01")
+
+    @pytest.mark.parametrize(
+        "calib_kwargs",
+        [{}, {"calib_id": "other"}, {"vehicle": "v99"}, {"channels": ("CAM_FRONT",)}],
+    )
+    def test_delegation_is_equivalent(self, calib_kwargs):
+        # manifest 版は ID を取り出して委譲するだけ = 判定が分岐しない
+        calib = self._calib(**calib_kwargs)
+        manifest = _manifest(calib_id="calib_v001", vehicle="v01")
+        assert _shape(
+            validate_calibration_coverage(manifest, _platform(), calib)
+        ) == _shape(
+            validate_calibration_coverage_by_ids(
+                _platform(), calib, calib_id="calib_v001", vehicle_id="v01")
+        )
 
 
 class TestObservedTopics:
@@ -397,6 +472,54 @@ class TestVehicleConsistency:
             _manifest(vehicle="v01"), self._vehicle(vehicle_id="v99"))
         assert not r.ok
         assert "vehicle_id_mismatch" in _codes(r, Severity.ERROR)
+
+
+class TestVehicleConsistencyByIds:
+    """manifest 非依存版 (recorder の preflight が manifest 生成前に呼ぶ)。"""
+
+    def _vehicle(self, **overrides):
+        data = dict(vehicle_id="v01", platform_id="platform_test")
+        data.update(overrides)
+        return Vehicle(**data)
+
+    def test_matching_ok(self):
+        r = validate_vehicle_consistency_by_ids(
+            self._vehicle(), platform_id="platform_test", vehicle_id="v01")
+        assert r.ok
+        assert not r.issues
+
+    def test_platform_mismatch_is_error(self):
+        r = validate_vehicle_consistency_by_ids(
+            self._vehicle(platform_id="other_platform"),
+            platform_id="platform_test", vehicle_id="v01")
+        assert not r.ok
+        assert "vehicle_platform_mismatch" in _codes(r, Severity.ERROR)
+
+    def test_vehicle_id_mismatch_is_error(self):
+        r = validate_vehicle_consistency_by_ids(
+            self._vehicle(vehicle_id="v99"),
+            platform_id="platform_test", vehicle_id="v01")
+        assert not r.ok
+        assert "vehicle_id_mismatch" in _codes(r, Severity.ERROR)
+
+    def test_ids_are_keyword_only(self):
+        with pytest.raises(TypeError):
+            validate_vehicle_consistency_by_ids(
+                self._vehicle(), "platform_test", "v01")
+
+    @pytest.mark.parametrize(
+        "vehicle_kwargs",
+        [{}, {"platform_id": "other_platform"}, {"vehicle_id": "v99"}],
+    )
+    def test_delegation_is_equivalent(self, vehicle_kwargs):
+        vehicle = self._vehicle(**vehicle_kwargs)
+        manifest = _manifest(platform="platform_test", vehicle="v01")
+        assert _shape(
+            validate_vehicle_consistency(manifest, vehicle)
+        ) == _shape(
+            validate_vehicle_consistency_by_ids(
+                vehicle, platform_id="platform_test", vehicle_id="v01")
+        )
 
 
 class TestValidateDrive:

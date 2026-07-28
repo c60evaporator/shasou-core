@@ -404,7 +404,7 @@ LocalFileProvider でスタンドアロンも可)。使用した定義の版を 
 
 ```bash
 pip install -e ".[dev,io]"     # 開発セットアップ
-pytest                          # 全テスト (現在 241 件。io 無しだと 1 件 skip)
+pytest                          # 全テスト (現在 258 件。io 無しだと 1 件 skip)
 python scripts/export_jsonschema.py           # JSON Schema 再生成
 python scripts/export_jsonschema.py --check   # 生成物がコードと一致するか
 ```
